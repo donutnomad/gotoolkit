@@ -67,10 +67,11 @@ type EnhancedImportManager struct {
 
 // ImportInfo 导入信息
 type ImportInfo struct {
-	Path         string // 包路径
-	Alias        string // 别名
-	Used         bool   // 是否被使用
-	DirectlyUsed bool   // 是否直接使用（而不仅仅是类型引用）
+	Path          string // 包路径
+	Alias         string // 别名
+	OriginalAlias string // 原始别名（来自源码）
+	Used          bool   // 是否被使用
+	DirectlyUsed  bool   // 是否直接使用（而不仅仅是类型引用）
 }
 
 // AnnotationParser 注释解析器

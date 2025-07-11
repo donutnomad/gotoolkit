@@ -34,17 +34,23 @@ func (g *GinGenerator) GenerateGinCode() string {
 		// 生成 bind 通用方法
 		bindMethodCode := g.generateBindMethod(iface)
 		parts = append(parts, bindMethodCode)
+		parts = append(parts, "")
 
 		// 为每个方法生成处理器方法
-		for _, method := range iface.Methods {
+		for i, method := range iface.Methods {
 			handlerCode := g.generateHandlerMethod(iface, method)
 			parts = append(parts, handlerCode)
+			parts = append(parts, "")
+			_ = i
 		}
 
 		// 为每个方法生成绑定方法
-		for _, method := range iface.Methods {
+		for i, method := range iface.Methods {
 			methodCode := g.generateMethodBinding(iface, method)
 			parts = append(parts, methodCode)
+			// 在方法之间添加空行，但不在最后一个方法后添加
+			parts = append(parts, "")
+			_ = i
 		}
 
 		parts = append(parts, "") // 接口之间空行分隔
@@ -390,8 +396,8 @@ func (g *GinGenerator) generateResponseHandling(method SwaggerMethod, methodCall
 	}
 
 	// 普通返回值 - 使用 result 避免与请求参数 data 冲突
-	return fmt.Sprintf(`result := %s
-        onGinResponse(c, result)`, methodCall)
+	return fmt.Sprintf(`var result %s = %s
+        onGinResponse(c, result)`, method.ResponseType.FullName, methodCall)
 }
 
 // isErrorType 检查是否是错误类型

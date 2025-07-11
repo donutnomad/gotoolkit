@@ -3,7 +3,10 @@ package main
 import (
 	"flag"
 	"fmt"
+	"go/parser"
+	"go/token"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -36,7 +39,7 @@ func run() error {
 	importMgr := NewEnhancedImportManager("") // 包路径稍后设置
 
 	// 创建接口解析器
-	parser := NewInterfaceParser(importMgr)
+	interfaceParser := NewInterfaceParser(importMgr)
 
 	// 解析接口
 	var collection *InterfaceCollection
@@ -52,12 +55,12 @@ func run() error {
 		if *verbose {
 			fmt.Printf("正在解析目录: %s\n", *path)
 		}
-		collection, err = parser.ParseDirectory(*path)
+		collection, err = interfaceParser.ParseDirectory(*path)
 	} else {
 		if *verbose {
 			fmt.Printf("正在解析文件: %s\n", *path)
 		}
-		collection, err = parser.ParseFile(*path)
+		collection, err = interfaceParser.ParseFile(*path)
 	}
 
 	if err != nil {
@@ -119,6 +122,11 @@ func run() error {
 		return fmt.Errorf("写入文件失败: %v", err)
 	}
 
+	// 格式化代码
+	if err := formatGoFile(outputPath); err != nil {
+		fmt.Printf("警告: 格式化代码失败: %v\n", err)
+	}
+
 	fmt.Printf("成功生成文件: %s\n", outputPath)
 	return nil
 }
@@ -169,13 +177,61 @@ func generateCode(collection *InterfaceCollection, packageName string) (string, 
 
 // inferPackageName 推断包名
 func inferPackageName(path string) string {
-	// 如果是文件，使用文件所在目录名
+	// 如果是文件，直接解析文件内容
 	if fileInfo, err := os.Stat(path); err == nil && !fileInfo.IsDir() {
+		// 解析文件获取包名
+		if pkgName := extractPackageNameFromFile(path); pkgName != "" {
+			return pkgName
+		}
+		// 如果解析失败，使用文件所在目录名
 		path = filepath.Dir(path)
+	} else {
+		// 如果是目录，尝试找到其中的 Go 文件并解析包名
+		if pkgName := extractPackageNameFromDir(path); pkgName != "" {
+			return pkgName
+		}
 	}
 
 	// 使用目录名作为包名
 	return filepath.Base(path)
+}
+
+// extractPackageNameFromFile 从单个文件中提取包名
+func extractPackageNameFromFile(filename string) string {
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, filename, nil, parser.PackageClauseOnly)
+	if err != nil {
+		return ""
+	}
+
+	if file.Name != nil {
+		return file.Name.Name
+	}
+
+	return ""
+}
+
+// extractPackageNameFromDir 从目录中的第一个 Go 文件提取包名
+func extractPackageNameFromDir(dir string) string {
+	files, err := os.ReadDir(dir)
+	if err != nil {
+		return ""
+	}
+
+	for _, file := range files {
+		if file.IsDir() {
+			continue
+		}
+
+		if strings.HasSuffix(file.Name(), ".go") && !strings.HasSuffix(file.Name(), "_test.go") {
+			filename := filepath.Join(dir, file.Name())
+			if pkgName := extractPackageNameFromFile(filename); pkgName != "" {
+				return pkgName
+			}
+		}
+	}
+
+	return ""
 }
 
 // getPackagePathFromDir 从目录获取包路径
@@ -191,6 +247,12 @@ func getPackagePathFromDir(path string) string {
 	}
 
 	return absPath
+}
+
+// formatGoFile 使用 gofmt 格式化 Go 文件
+func formatGoFile(filename string) error {
+	cmd := exec.Command("gofmt", "-w", filename)
+	return cmd.Run()
 }
 
 // printUsage 打印使用说明

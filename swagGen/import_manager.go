@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/donutnomad/gotoolkit/internal/xast"
 	"github.com/samber/lo"
 	"path/filepath"
 	"sort"
@@ -16,6 +17,28 @@ func NewEnhancedImportManager(packagePath string) *EnhancedImportManager {
 		aliasMapping:   make(map[string]string),
 		typeReferences: make(map[string][]string),
 		packagePath:    packagePath,
+	}
+}
+
+// AddOriginalImports 添加原始导入信息
+func (mgr *EnhancedImportManager) AddOriginalImports(originalImports xast.ImportInfoSlice) {
+	for _, originalImport := range originalImports {
+		path := originalImport.Path
+		if path == "" || path == mgr.packagePath {
+			continue
+		}
+
+		// 检查是否已经存在
+		if _, exists := mgr.imports[path]; exists {
+			// 如果已存在，更新原始别名信息
+			mgr.imports[path].OriginalAlias = originalImport.Alias
+		} else {
+			// 创建新的导入信息
+			mgr.ensureAlias(path)
+			if info, exists := mgr.imports[path]; exists {
+				info.OriginalAlias = originalImport.Alias
+			}
+		}
 	}
 }
 
@@ -129,10 +152,21 @@ func (mgr *EnhancedImportManager) GetImportDeclarations() string {
 		var line string
 		if info.DirectlyUsed {
 			// 直接使用的包 - 使用别名
-			line = fmt.Sprintf("\t%s \"%s\"", info.Alias, info.Path)
+			alias := info.Alias
+			if info.OriginalAlias != "" {
+				// 如果有原始别名，优先使用原始别名
+				alias = info.OriginalAlias
+			}
+			line = fmt.Sprintf("\t%s \"%s\"", alias, info.Path)
 		} else {
-			// 仅类型引用的包 - 使用 _ 前缀
-			line = fmt.Sprintf("\t_ \"%s\"", info.Path)
+			// 仅类型引用的包 - 检查是否有原始别名
+			if info.OriginalAlias != "" {
+				// 如果有原始别名，使用原始别名而不是 _
+				line = fmt.Sprintf("\t%s \"%s\"", info.OriginalAlias, info.Path)
+			} else {
+				// 没有原始别名才使用 _
+				line = fmt.Sprintf("\t_ \"%s\"", info.Path)
+			}
 		}
 
 		// 分类导入

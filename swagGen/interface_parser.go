@@ -34,6 +34,9 @@ func (p *InterfaceParser) ParseFile(filename string) (*InterfaceCollection, erro
 	// 获取导入信息
 	imports := new(xast.ImportInfoSlice).From(file.Imports)
 
+	// 将原始导入信息添加到导入管理器
+	p.importMgr.AddOriginalImports(imports)
+
 	// 创建注释解析器
 	annotationParser := NewAnnotationParser(fileSet)
 
