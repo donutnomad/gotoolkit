@@ -82,6 +82,20 @@ func (p *AnnotationParser) parseSwaggerAnnotation(line string, method *SwaggerMe
 		}
 	}
 
+	// 解析标签: @TAG(a,b,c)
+	if tagRegex := regexp.MustCompile(`@TAG\s*\(([^)]+)\)`); tagRegex.MatchString(line) {
+		matches := tagRegex.FindStringSubmatch(line)
+		if len(matches) == 2 {
+			tagList := strings.Split(matches[1], ",")
+			for _, tag := range tagList {
+				trimmedTag := strings.TrimSpace(tag)
+				if trimmedTag != "" {
+					method.Tags = append(method.Tags, trimmedTag)
+				}
+			}
+		}
+	}
+
 	// 解析内容类型
 	switch {
 	case strings.HasPrefix(line, "@FORM"):
