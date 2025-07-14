@@ -160,14 +160,14 @@ func generateCode(collection *InterfaceCollection, packageName string) (string, 
 	}
 
 	// 生成 Swagger 注释
-	swaggerComments := swaggerGen.GenerateSwaggerComments()
-	if swaggerComments != "" {
-		parts = append(parts, swaggerComments)
-		parts = append(parts, "")
-	}
+	swaggerCommentsMap := swaggerGen.GenerateSwaggerComments()
+	//if swaggerComments != "" {
+	//	parts = append(parts, swaggerComments)
+	//	parts = append(parts, "")
+	//}
 
 	// 生成 Gin 绑定代码
-	ginCode := ginGen.GenerateComplete()
+	ginCode := ginGen.GenerateComplete(swaggerCommentsMap)
 	if ginCode != "" {
 		parts = append(parts, ginCode)
 	}

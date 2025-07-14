@@ -22,7 +22,7 @@ func NewGinGenerator(collection *InterfaceCollection) *GinGenerator {
 }
 
 // GenerateGinCode 生成 Gin 绑定代码
-func (g *GinGenerator) GenerateGinCode() string {
+func (g *GinGenerator) GenerateGinCode(comments map[string]string) string {
 	var parts []string
 
 	// 为每个接口生成包装结构体和绑定方法
@@ -38,6 +38,10 @@ func (g *GinGenerator) GenerateGinCode() string {
 
 		// 为每个方法生成处理器方法
 		for i, method := range iface.Methods {
+			// 添加注释
+			if v, ok := comments[method.Name]; ok {
+				parts = append(parts, v)
+			}
 			handlerCode := g.generateHandlerMethod(iface, method)
 			parts = append(parts, handlerCode)
 			parts = append(parts, "")
@@ -443,7 +447,7 @@ func {{.ConstructorName}}(inner {{.InterfaceName}}) *{{.WrapperName}} {
 }
 
 // GenerateComplete 生成完整的 Gin 绑定代码
-func (g *GinGenerator) GenerateComplete() string {
+func (g *GinGenerator) GenerateComplete(comments map[string]string) string {
 	var parts []string
 
 	// 生成辅助函数
@@ -452,16 +456,16 @@ func (g *GinGenerator) GenerateComplete() string {
 		parts = append(parts, helperFunctions)
 	}
 
-	// 生成包装结构体和绑定方法
-	ginCode := g.GenerateGinCode()
-	if ginCode != "" {
-		parts = append(parts, ginCode)
-	}
-
 	// 生成构造函数
 	constructors := g.GenerateConstructors()
 	if constructors != "" {
 		parts = append(parts, constructors)
+	}
+
+	// 生成包装结构体和绑定方法
+	ginCode := g.GenerateGinCode(comments)
+	if ginCode != "" {
+		parts = append(parts, ginCode)
 	}
 
 	return strings.Join(parts, "\n\n")

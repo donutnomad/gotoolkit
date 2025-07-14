@@ -13,19 +13,16 @@ func NewSwaggerGenerator(collection *InterfaceCollection) *SwaggerGenerator {
 }
 
 // GenerateSwaggerComments 生成 Swagger 注释
-func (g *SwaggerGenerator) GenerateSwaggerComments() string {
-	var lines []string
-
+func (g *SwaggerGenerator) GenerateSwaggerComments() map[string]string {
+	var out = make(map[string]string)
 	// 为每个接口的每个方法生成注释
 	for _, iface := range g.collection.Interfaces {
 		for _, method := range iface.Methods {
 			methodComments := g.generateMethodComments(method, iface.Name)
-			lines = append(lines, methodComments...)
-			lines = append(lines, "") // 空行分隔
+			out[method.Name] = strings.Join(methodComments, "\n")
 		}
 	}
-
-	return strings.Join(lines, "\n")
+	return out
 }
 
 // generateMethodComments 生成单个方法的 Swagger 注释
@@ -49,10 +46,9 @@ func (g *SwaggerGenerator) generateMethodComments(method SwaggerMethod, interfac
 
 	// Tags - 使用接口名作为标签
 	tags := method.Tags
-	if len(tags) == 0 {
-		tags = []string{interfaceName}
+	if len(tags) > 0 {
+		lines = append(lines, fmt.Sprintf("// @Tags %s", strings.Join(tags, ",")))
 	}
-	lines = append(lines, fmt.Sprintf("// @Tags %s", strings.Join(tags, ",")))
 
 	// Accept (请求内容类型)
 	lines = append(lines, fmt.Sprintf("// @Accept %s", g.getAcceptType(method.ContentType)))
@@ -262,32 +258,33 @@ func (g *SwaggerGenerator) GenerateTypeReferences() string {
 	return g.collection.ImportMgr.GetTypeReferences()
 }
 
-// GenerateComplete 生成完整的文件内容
-func (g *SwaggerGenerator) GenerateComplete(packageName string) string {
-	var parts []string
-
-	// 文件头部
-	parts = append(parts, g.GenerateFileHeader(packageName))
-
-	// 导入声明
-	imports := g.GenerateImports()
-	if imports != "" {
-		parts = append(parts, imports)
-		parts = append(parts, "")
-	}
-
-	// 类型引用
-	typeRefs := g.GenerateTypeReferences()
-	if typeRefs != "" {
-		parts = append(parts, typeRefs)
-		parts = append(parts, "")
-	}
-
-	// Swagger 注释
-	swaggerComments := g.GenerateSwaggerComments()
-	if swaggerComments != "" {
-		parts = append(parts, swaggerComments)
-	}
-
-	return strings.Join(parts, "\n")
-}
+//
+//// GenerateComplete 生成完整的文件内容
+//func (g *SwaggerGenerator) GenerateComplete(packageName string) string {
+//	var parts []string
+//
+//	// 文件头部
+//	parts = append(parts, g.GenerateFileHeader(packageName))
+//
+//	// 导入声明
+//	imports := g.GenerateImports()
+//	if imports != "" {
+//		parts = append(parts, imports)
+//		parts = append(parts, "")
+//	}
+//
+//	// 类型引用
+//	typeRefs := g.GenerateTypeReferences()
+//	if typeRefs != "" {
+//		parts = append(parts, typeRefs)
+//		parts = append(parts, "")
+//	}
+//
+//	// Swagger 注释
+//	swaggerComments := g.GenerateSwaggerComments()
+//	if swaggerComments != "" {
+//		parts = append(parts, swaggerComments)
+//	}
+//
+//	return strings.Join(parts, "\n")
+//}
