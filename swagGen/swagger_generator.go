@@ -68,8 +68,10 @@ func (g *SwaggerGenerator) generateMethodComments(method SwaggerMethod, interfac
 	lines = append(lines, successLine)
 
 	// Router
-	routerLine := fmt.Sprintf("// @Router %s [%s]", method.Path, strings.ToLower(method.HTTPMethod))
-	lines = append(lines, routerLine)
+	for _, pathRouter := range method.Paths {
+		routerLine := fmt.Sprintf("// @Router %s [%s]", pathRouter, strings.ToLower(method.HTTPMethod))
+		lines = append(lines, routerLine)
+	}
 
 	return lines
 }

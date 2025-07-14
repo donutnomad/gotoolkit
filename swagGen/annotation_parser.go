@@ -62,7 +62,7 @@ func (p *AnnotationParser) ParseMethodAnnotations(method *ast.FuncDecl) (*Swagge
 	swaggerMethod.Comments = commentLines
 
 	// 如果没有找到任何 Swagger 注释，返回 nil
-	if swaggerMethod.Path == "" {
+	if len(swaggerMethod.Paths) == 0 {
 		return nil, nil
 	}
 
@@ -78,7 +78,7 @@ func (p *AnnotationParser) parseSwaggerAnnotation(line string, method *SwaggerMe
 		matches := httpMethodRegex.FindStringSubmatch(line)
 		if len(matches) == 3 {
 			method.HTTPMethod = matches[1]
-			method.Path = matches[2]
+			method.Paths = append(method.Paths, matches[2])
 		}
 	}
 
@@ -117,50 +117,35 @@ func (p *AnnotationParser) parseSwaggerAnnotation(line string, method *SwaggerMe
 }
 
 // ParseParameterAnnotations 解析参数注释
-func (p *AnnotationParser) ParseParameterAnnotations(field *ast.Field) []Parameter {
-	if field.Doc == nil {
-		return nil
+func (p *AnnotationParser) ParseParameterAnnotations(paramName string, tag string) Parameter {
+	param := Parameter{
+		Name:     paramName,
+		Required: true, // 默认必需
 	}
+	line := tag
 
-	var parameters []Parameter
-
-	// 获取参数名称
-	var paramNames []string
-	for _, name := range field.Names {
-		paramNames = append(paramNames, name.Name)
-	}
-
-	// 解析注释
-	for _, comment := range field.Doc.List {
-		line := strings.TrimSpace(strings.TrimPrefix(comment.Text, "//"))
-
-		for _, paramName := range paramNames {
-			param := Parameter{
-				Name:     paramName,
-				Required: true, // 默认必需
+	// 解析参数类型注释
+	switch {
+	case strings.HasPrefix(line, "@PARM"):
+		param.Source = "path"
+		// 匹配 @PARM(alias)
+		if aliasRegex := regexp.MustCompile(`@PARM\s*\(([^)]+)\)`); aliasRegex.MatchString(line) {
+			matches := aliasRegex.FindStringSubmatch(line)
+			if len(matches) == 2 {
+				param.Alias = matches[1]
 			}
-
-			// 解析参数类型注释
-			switch {
-			case strings.HasPrefix(line, "@PARM"):
-				param.Source = "path"
-			case strings.HasPrefix(line, "@FORM"):
-				param.Source = "formData"
-			case strings.HasPrefix(line, "@JSON"), strings.HasPrefix(line, "@BODY"):
-				param.Source = "body"
-			case strings.HasPrefix(line, "@QUERY"):
-				param.Source = "query"
-			case strings.HasPrefix(line, "@HEADER"):
-				param.Source = "header"
-			default:
-				continue
-			}
-
-			parameters = append(parameters, param)
 		}
+	case strings.HasPrefix(line, "@FORM"):
+		param.Source = "formData"
+	case strings.HasPrefix(line, "@JSON"), strings.HasPrefix(line, "@BODY"):
+		param.Source = "body"
+	case strings.HasPrefix(line, "@QUERY"):
+		param.Source = "query"
+	case strings.HasPrefix(line, "@HEADER"):
+		param.Source = "header"
 	}
 
-	return parameters
+	return param
 }
 
 // extractPathParameters 从路径中提取参数
@@ -184,30 +169,4 @@ func (p *AnnotationParser) extractPathParameters(path string) []Parameter {
 	}
 
 	return parameters
-}
-
-// mergeParameters 合并参数列表，严格保持接口定义的顺序
-func (p *AnnotationParser) mergeParameters(pathParams, interfaceParams []Parameter) []Parameter {
-	// 创建路径参数映射，用于更新参数信息
-	pathParamMap := make(map[string]Parameter)
-	for _, param := range pathParams {
-		pathParamMap[param.Name] = param
-	}
-
-	// 以接口参数的顺序为准，并用路径参数信息更新
-	var merged []Parameter
-	for _, param := range interfaceParams {
-		// 如果路径参数中有同名参数，使用路径参数的信息（特别是 Source）
-		if pathParam, exists := pathParamMap[param.Name]; exists {
-			// 保留接口参数的类型信息，但使用路径参数的 Source
-			finalParam := param
-			finalParam.Source = pathParam.Source
-			merged = append(merged, finalParam)
-		} else {
-			// 没有对应的路径参数，直接使用接口参数
-			merged = append(merged, param)
-		}
-	}
-
-	return merged
 }

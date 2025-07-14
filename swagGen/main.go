@@ -146,6 +146,22 @@ func generateCode(collection *InterfaceCollection, packageName string) (string, 
 	parts = append(parts, header)
 
 	// 生成导入声明
+	for _, iface := range ginGen.collection.Interfaces {
+		for _, method := range iface.Methods {
+			n := method.ResponseType.FullName
+			if idx := strings.Index(n, "."); idx > 0 {
+				pkgName := n[:idx]
+				for _, info := range swaggerGen.collection.ImportMgr.imports {
+					parts2 := strings.Split(info.Path, "/")
+					if len(parts2) > 0 {
+						if pkgName == parts2[len(parts2)-1] {
+							info.DirectlyUsed = true
+						}
+					}
+				}
+			}
+		}
+	}
 	imports := swaggerGen.GenerateImports()
 	if imports != "" {
 		parts = append(parts, imports)

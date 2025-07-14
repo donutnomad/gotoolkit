@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"github.com/donutnomad/gotoolkit/internal/xast"
 	"go/token"
 )
@@ -20,6 +21,7 @@ type TypeInfo struct {
 // Parameter 表示方法参数
 type Parameter struct {
 	Name     string   // 参数名
+	Alias    string   // 别名
 	Type     TypeInfo // 参数类型
 	Source   string   // @PARM, @FORM, @JSON, @BODY
 	Required bool     // 是否必需
@@ -30,7 +32,7 @@ type Parameter struct {
 type SwaggerMethod struct {
 	Name         string      // 方法名
 	HTTPMethod   string      // HTTP 方法 (GET, POST, PUT, DELETE)
-	Path         string      // API 路径
+	Paths        []string    // API 路径
 	Parameters   []Parameter // 参数列表
 	ResponseType TypeInfo    // 返回类型
 	ContentType  string      // 请求内容类型
@@ -48,6 +50,14 @@ type SwaggerInterface struct {
 	PackagePath string               // 包路径
 	Comments    []string             // 接口注释
 	Imports     xast.ImportInfoSlice // 导入信息
+}
+
+func (w SwaggerInterface) GetWrapperName() string {
+	n := fmt.Sprintf("%sWrap", w.Name)
+	if n[0] == 'I' {
+		n = n[1:]
+	}
+	return n
 }
 
 // InterfaceCollection 表示接口集合
@@ -99,12 +109,4 @@ type SwaggerGenerator struct {
 // GinGenerator Gin 绑定代码生成器
 type GinGenerator struct {
 	collection *InterfaceCollection
-}
-
-// GenerationContext 生成上下文
-type GenerationContext struct {
-	Interfaces  []SwaggerInterface     // 接口列表
-	PackageName string                 // 包名
-	ImportMgr   *EnhancedImportManager // 导入管理器
-	OutputFile  string                 // 输出文件
 }

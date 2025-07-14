@@ -1,11 +1,16 @@
 package main
 
 import (
+	"bufio"
+	"bytes"
+	"fmt"
 	"github.com/donutnomad/gotoolkit/internal/xast"
+	parsers "github.com/donutnomad/gotoolkit/swagGen/parser"
 	"github.com/samber/lo"
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"os"
 	"path/filepath"
 	"strings"
 )
@@ -17,6 +22,35 @@ func NewInterfaceParser(importMgr *EnhancedImportManager) *InterfaceParser {
 	}
 }
 
+// 从文件的line:column获取文件内容
+func getContent(fileContent []byte, start, end token.Position) string {
+	reader := bufio.NewScanner(bytes.NewReader(fileContent))
+	var lineNum int
+	var sb strings.Builder
+	for reader.Scan() {
+		lineNum++
+		line := reader.Text()
+		if lineNum == start.Line {
+			var endColumn = len(line)
+			if lineNum == end.Line {
+				endColumn = end.Column
+			}
+			sb.WriteString(line[start.Column-1 : endColumn])
+		}
+		if start.Line != end.Line && lineNum > start.Line && lineNum <= end.Line {
+			if lineNum == end.Line {
+				sb.WriteString(line[:end.Column])
+			} else {
+				sb.WriteString(line)
+			}
+		}
+		if lineNum > end.Line {
+			break
+		}
+	}
+	return sb.String()
+}
+
 // ParseFile 解析文件中的接口
 func (p *InterfaceParser) ParseFile(filename string) (*InterfaceCollection, error) {
 	fileSet := token.NewFileSet()
@@ -24,6 +58,11 @@ func (p *InterfaceParser) ParseFile(filename string) (*InterfaceCollection, erro
 	if err != nil {
 		return nil, err
 	}
+	fileBs, err := os.ReadFile(filename)
+	if err != nil {
+		return nil, err
+	}
+	_ = fileBs
 
 	// 获取包路径
 	packagePath, err := p.getPackagePath(filename)
@@ -113,7 +152,7 @@ func (p *InterfaceParser) ParseFile(filename string) (*InterfaceCollection, erro
 				}
 
 				// 解析方法参数
-				p.parseMethodParameters(swaggerMethod, funcType, typeParser, annotationParser)
+				p.parseMethodParameters(fileSet, fileBs, swaggerMethod, funcType, typeParser, annotationParser)
 
 				// 解析返回类型
 				p.parseMethodReturnType(swaggerMethod, funcType, typeParser)
@@ -136,50 +175,51 @@ func (p *InterfaceParser) ParseFile(filename string) (*InterfaceCollection, erro
 }
 
 // parseMethodParameters 解析方法参数
-func (p *InterfaceParser) parseMethodParameters(swaggerMethod *SwaggerMethod, funcType *ast.FuncType, typeParser *ReturnTypeParser, annotationParser *AnnotationParser) {
+func (p *InterfaceParser) parseMethodParameters(fileSet *token.FileSet, fileBs []byte, swaggerMethod *SwaggerMethod, funcType *ast.FuncType, typeParser *ReturnTypeParser, annotationParser *AnnotationParser) {
 	if funcType.Params == nil {
 		return
 	}
 
+	// 获取参数的整体文本解析出注释（ast不支持解析参数间的注释)
+	a := fileSet.Position(funcType.Params.Opening)
+	b := fileSet.Position(funcType.Params.Closing)
+	text := getContent(fileBs, a, b)
+	ps, err := parsers.ParseParameters(text)
+	if err != nil {
+		panic(err)
+	}
+
 	var allParams []Parameter
 
-	// 从路径中提取参数
-	pathParams := annotationParser.extractPathParameters(swaggerMethod.Path)
-
-	// 解析方法参数
 	for _, field := range funcType.Params.List {
-		// 解析参数类型
 		paramType := typeParser.ParseParameterType(field.Type)
-
-		// 解析参数注释
-		annotationParams := annotationParser.ParseParameterAnnotations(field)
-
-		// 如果没有注释，根据类型推断参数来源
-		if len(annotationParams) == 0 {
-			for _, name := range field.Names {
-				param := Parameter{
-					Name:     name.Name,
-					Type:     paramType,
-					Required: true,
-				}
-
-				// 根据参数名和类型推断来源
-				param.Source = p.inferParameterSource(param.Name, paramType, swaggerMethod)
-
-				allParams = append(allParams, param)
-			}
-		} else {
-			// 使用注释信息
-			for _, param := range annotationParams {
-				param.Type = paramType
-				allParams = append(allParams, param)
+		fullType := xast.GetFieldType(field.Type, nil) // example: *gin.Context
+		for _, item := range ps {
+			if item.Type == fullType {
+				parameter := annotationParser.ParseParameterAnnotations(item.Name, item.Tag)
+				parameter.Type = paramType
+				allParams = append(allParams, parameter)
 			}
 		}
 	}
 
-	// 合并路径参数和方法参数
-	swaggerMethod.Parameters = annotationParser.mergeParameters(pathParams, allParams)
+	// 提取路径中的变量
+	for _, routerPath := range swaggerMethod.Paths {
+		pathParams := annotationParser.extractPathParameters(routerPath)
+		for _, pathParam := range pathParams {
+			_, ok := lo.Find(allParams, func(item Parameter) bool {
+				return item.Name == pathParam.Name || (item.Alias != "" && item.Alias == pathParam.Name)
+			})
+			if !ok {
+				panic(fmt.Sprintf("path %s param `%s` was not found in %s \n Use @PARAM(%s) to fix it.", routerPath, pathParam.Name, clean.Replace(text), pathParam.Name))
+			}
+		}
+	}
+
+	swaggerMethod.Parameters = allParams
 }
+
+var clean = strings.NewReplacer("\t", " ", "\n", " ")
 
 // parseMethodReturnType 解析方法返回类型
 func (p *InterfaceParser) parseMethodReturnType(swaggerMethod *SwaggerMethod, funcType *ast.FuncType, typeParser *ReturnTypeParser) {
@@ -205,30 +245,6 @@ func (p *InterfaceParser) isContextType(expr ast.Expr) bool {
 	}
 
 	return ident.Name == "context" && selector.Sel.Name == "Context"
-}
-
-// inferParameterSource 推断参数来源
-func (p *InterfaceParser) inferParameterSource(paramName string, _ TypeInfo, method *SwaggerMethod) string {
-	// 检查是否是路径参数
-	if strings.Contains(method.Path, "{"+paramName+"}") {
-		return "path"
-	}
-
-	// 根据参数名推断
-	lowerName := strings.ToLower(paramName)
-	if strings.Contains(lowerName, "id") && strings.Contains(method.Path, "{") {
-		return "path"
-	}
-
-	// 根据内容类型推断
-	switch method.ContentType {
-	case "application/json":
-		return "body"
-	case "multipart/form-data":
-		return "formData"
-	default:
-		return "formData"
-	}
 }
 
 // getPackagePath 获取包路径

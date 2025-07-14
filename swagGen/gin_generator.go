@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"github.com/donutnomad/gotoolkit/internal/utils"
+	"github.com/samber/lo"
 	"regexp"
 	"strings"
 )
@@ -57,6 +58,14 @@ func (g *GinGenerator) GenerateGinCode(comments map[string]string) string {
 			_ = i
 		}
 
+		// BindAll 方法
+		template := fmt.Sprintf("func (a *%s) BindAll(router gin.IRoutes, preHandlers ...gin.HandlerFunc) {", iface.GetWrapperName())
+		parts = append(parts, template)
+		for _, method := range iface.Methods {
+			parts = append(parts, fmt.Sprintf("	a.%s(router, preHandlers...)", fmt.Sprintf("Bind%s", method.Name)))
+		}
+		parts = append(parts, "}")
+
 		parts = append(parts, "") // 接口之间空行分隔
 	}
 
@@ -65,7 +74,7 @@ func (g *GinGenerator) GenerateGinCode(comments map[string]string) string {
 
 // generateWrapperStruct 生成包装结构体
 func (g *GinGenerator) generateWrapperStruct(iface SwaggerInterface) string {
-	wrapperName := fmt.Sprintf("%sWrap", iface.Name)
+	wrapperName := iface.GetWrapperName()
 
 	template := `
 type {{.WrapperName}} struct {
@@ -84,7 +93,7 @@ type {{.WrapperName}} struct {
 
 // generateBindMethod 生成通用的 bind 方法
 func (g *GinGenerator) generateBindMethod(iface SwaggerInterface) string {
-	wrapperName := fmt.Sprintf("%sWrap", iface.Name)
+	wrapperName := iface.GetWrapperName()
 
 	template := `
 func (a *{{.WrapperName}}) bind(router gin.IRoutes, method, path string, preHandlers []gin.HandlerFunc, f gin.HandlerFunc) {
@@ -111,14 +120,14 @@ func (a *{{.WrapperName}}) bind(router gin.IRoutes, method, path string, preHand
 
 // generateHandlerMethod 生成处理器方法
 func (g *GinGenerator) generateHandlerMethod(iface SwaggerInterface, method SwaggerMethod) string {
-	wrapperName := fmt.Sprintf("%sWrap", iface.Name)
+	wrapperName := iface.GetWrapperName()
 	handlerMethodName := method.Name
 
 	// 生成参数绑定代码
 	paramBindingCode := g.generateParameterBinding(method)
 
 	// 生成方法调用代码
-	methodCallCode := g.generateMethodCall(iface, method)
+	methodCallCode := g.generateMethodCall(method)
 
 	template := `
 func (a *{{.WrapperName}}) {{.HandlerMethodName}}(c *gin.Context) {
@@ -140,16 +149,18 @@ func (a *{{.WrapperName}}) {{.HandlerMethodName}}(c *gin.Context) {
 
 // generateMethodBinding 生成方法绑定
 func (g *GinGenerator) generateMethodBinding(iface SwaggerInterface, method SwaggerMethod) string {
-	wrapperName := fmt.Sprintf("%sWrap", iface.Name)
+	wrapperName := iface.GetWrapperName()
 	bindMethodName := fmt.Sprintf("Bind%s", method.Name)
 	handlerMethodName := method.Name
 
 	// 转换路径格式：{param} -> :param
-	ginPath := convertPathToGinFormat(method.Path)
+	ginPaths := lo.Map(method.Paths, func(item string, index int) string {
+		return convertPathToGinFormat(item)
+	})
 
 	template := `
-func (a *{{.WrapperName}}) {{.BindMethodName}}(router gin.IRoutes, preHandlers ...gin.HandlerFunc) {
-    a.bind(router, "{{.HTTPMethod}}", "{{.GinPath}}", preHandlers, a.{{.HandlerMethodName}})
+func (a *{{.WrapperName}}) {{.BindMethodName}}(router gin.IRoutes, preHandlers ...gin.HandlerFunc) { {{- range .GinPath}}
+    a.bind(router, "{{$.HTTPMethod}}", "{{.}}", preHandlers, a.{{$.HandlerMethodName}}){{end}}
 }
 `
 
@@ -157,7 +168,7 @@ func (a *{{.WrapperName}}) {{.BindMethodName}}(router gin.IRoutes, preHandlers .
 		"WrapperName":       wrapperName,
 		"BindMethodName":    bindMethodName,
 		"HTTPMethod":        method.HTTPMethod,
-		"GinPath":           ginPath,
+		"GinPath":           ginPaths,
 		"HandlerMethodName": handlerMethodName,
 	}
 
@@ -305,7 +316,11 @@ func (g *GinGenerator) generateTypedParamBinding(param Parameter, paramValue str
 
 // generatePathParamBinding 生成路径参数绑定
 func (g *GinGenerator) generatePathParamBinding(param Parameter) string {
-	paramValue := fmt.Sprintf(`c.Param("%s")`, param.Name)
+	paramNameInPath := param.Name
+	if param.Alias != "" {
+		paramNameInPath = param.Alias
+	}
+	paramValue := fmt.Sprintf(`c.Param("%s")`, paramNameInPath)
 	return g.generateTypedParamBinding(param, paramValue)
 }
 
@@ -339,7 +354,7 @@ func (g *GinGenerator) generateHeaderParamBinding(param Parameter) string {
 }
 
 // generateMethodCall 生成方法调用代码
-func (g *GinGenerator) generateMethodCall(iface SwaggerInterface, method SwaggerMethod) string {
+func (g *GinGenerator) generateMethodCall(method SwaggerMethod) string {
 	var args []string
 
 	// 添加 context 参数（如果方法需要）
@@ -425,7 +440,7 @@ func (g *GinGenerator) GenerateConstructors() string {
 
 // generateConstructor 生成构造函数
 func (g *GinGenerator) generateConstructor(iface SwaggerInterface) string {
-	wrapperName := fmt.Sprintf("%sWrap", iface.Name)
+	wrapperName := iface.GetWrapperName()
 	constructorName := fmt.Sprintf("New%s", wrapperName)
 
 	template := `
@@ -473,13 +488,13 @@ func (g *GinGenerator) GenerateComplete(comments map[string]string) string {
 
 // generateHelperFunctions 生成辅助函数
 func (g *GinGenerator) generateHelperFunctions() string {
-	return `// onGinBindErr 处理绑定错误
-func onGinBindErr(c *gin.Context, err error) {
-    c.JSON(400, gin.H{"error": err.Error()})
-}
-
-// onGinResponse 处理响应
-func onGinResponse[T any](c *gin.Context, data T) {
-    c.JSON(200, data)
-}`
+	return `//// onGinBindErr 处理绑定错误
+// func onGinBindErr(c *gin.Context, err error) {
+//     c.JSON(400, gin.H{"error": err.Error()})
+// }
+// 
+// // onGinResponse 处理响应
+// func onGinResponse[T any](c *gin.Context, data T) {
+//     c.JSON(200, data)
+// }`
 }
