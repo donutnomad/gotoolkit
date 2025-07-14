@@ -30,7 +30,7 @@ SwagGen 是一个 Go 工具，用于从带有特殊注释的 Go 接口定义中�
 
 ### 参数类型
 ```go
-// @PARM     - 路径参数
+// @PARAM     - 路径参数
 // @QUERY    - 查询参数
 // @FORM     - 表单参数
 // @BODY     - 请求体参数
@@ -97,7 +97,7 @@ type IUserAPI interface {
     // @JSON
     GetUser(
         ctx context.Context,
-        // @PARM
+        // @PARAM
         userId string,
     ) service.BaseResponse[UserInfo]
 }

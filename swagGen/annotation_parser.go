@@ -133,10 +133,10 @@ func (p *AnnotationParser) ParseParameterAnnotations(paramName string, tag strin
 
 	// 解析参数类型注释
 	switch {
-	case strings.HasPrefix(line, "@PARM"):
+	case strings.HasPrefix(line, "@PARAM"):
 		param.Source = "path"
-		// 匹配 @PARM(alias)
-		if aliasRegex := regexp.MustCompile(`@PARM\s*\(([^)]+)\)`); aliasRegex.MatchString(line) {
+		// 匹配 @PARAM(alias)
+		if aliasRegex := regexp.MustCompile(`@PARAM\s*\(([^)]+)\)`); aliasRegex.MatchString(line) {
 			matches := aliasRegex.FindStringSubmatch(line)
 			if len(matches) == 2 {
 				param.Alias = matches[1]

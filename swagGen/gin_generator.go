@@ -129,13 +129,21 @@ func (g *GinGenerator) generateHandlerMethod(iface SwaggerInterface, method Swag
 	// 生成方法调用代码
 	methodCallCode := g.generateMethodCall(method)
 
-	template := `
+	var template string
+	if paramBindingCode == "" {
+		template = `
+func (a *{{.WrapperName}}) {{.HandlerMethodName}}(c *gin.Context) {
+{{.MethodCall}}
+}
+`
+	} else {
+		template = `
 func (a *{{.WrapperName}}) {{.HandlerMethodName}}(c *gin.Context) {
 {{.ParameterBinding}}
 {{.MethodCall}}
 }
 `
-
+	}
 	data := map[string]interface{}{
 		"WrapperName":       wrapperName,
 		"HandlerMethodName": handlerMethodName,
@@ -475,12 +483,6 @@ func {{.ConstructorName}}(inner {{.InterfaceName}}) *{{.WrapperName}} {
 func (g *GinGenerator) GenerateComplete(comments map[string]string) string {
 	var parts []string
 
-	// 生成辅助函数
-	helperFunctions := g.generateHelperFunctions()
-	if helperFunctions != "" {
-		parts = append(parts, helperFunctions)
-	}
-
 	// 生成构造函数
 	constructors := g.GenerateConstructors()
 	if constructors != "" {
@@ -491,6 +493,12 @@ func (g *GinGenerator) GenerateComplete(comments map[string]string) string {
 	ginCode := g.GenerateGinCode(comments)
 	if ginCode != "" {
 		parts = append(parts, ginCode)
+	}
+
+	// 生成辅助函数
+	helperFunctions := g.generateHelperFunctions()
+	if helperFunctions != "" {
+		parts = append(parts, helperFunctions)
 	}
 
 	return strings.Join(parts, "\n\n")

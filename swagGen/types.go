@@ -23,7 +23,7 @@ type Parameter struct {
 	Name     string   // 参数名
 	Alias    string   // 别名
 	Type     TypeInfo // 参数类型
-	Source   string   // @PARM, @FORM, @JSON, @BODY
+	Source   string   // @PARAM, @FORM, @JSON, @BODY
 	Required bool     // 是否必需
 	Comment  string   // 参数注释
 }

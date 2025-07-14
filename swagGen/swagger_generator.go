@@ -50,8 +50,16 @@ func (g *SwaggerGenerator) generateMethodComments(method SwaggerMethod, interfac
 		lines = append(lines, fmt.Sprintf("// @Tags %s", strings.Join(tags, ",")))
 	}
 
+	contentType := method.ContentType
 	// Accept (请求内容类型)
-	lines = append(lines, fmt.Sprintf("// @Accept %s", g.getAcceptType(method.ContentType)))
+	for _, p := range method.Parameters {
+		if p.Source == "formData" {
+			contentType = "application/x-www-form-urlencoded"
+		} else {
+			contentType = "application/json"
+		}
+	}
+	lines = append(lines, fmt.Sprintf("// @Accept %s", g.getAcceptType(contentType)))
 
 	// Produce (响应内容类型)
 	lines = append(lines, fmt.Sprintf("// @Produce %s", g.getProduceType(method.AcceptType)))

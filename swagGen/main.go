@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	parsers "github.com/donutnomad/gotoolkit/swagGen/parser"
 	"go/parser"
 	"go/token"
 	"os"
@@ -148,9 +149,7 @@ func generateCode(collection *InterfaceCollection, packageName string) (string, 
 	// 生成导入声明
 	for _, iface := range ginGen.collection.Interfaces {
 		for _, method := range iface.Methods {
-			n := method.ResponseType.FullName
-			if idx := strings.Index(n, "."); idx > 0 {
-				pkgName := n[:idx]
+			for _, pkgName := range parsers.ExtractPackages(method.ResponseType.FullName) {
 				for _, info := range swaggerGen.collection.ImportMgr.imports {
 					parts2 := strings.Split(info.Path, "/")
 					if len(parts2) > 0 {
@@ -300,7 +299,7 @@ func printUsage() {
   @JSON                     - JSON 数据
   @MULTIPART               - 文件上传
   @MIME(application/json)   - 自定义 MIME 类型
-  @PARM                     - 路径参数
+  @PARAM                     - 路径参数
   @QUERY                    - 查询参数
   @BODY                     - 请求体参数
   @HEADER                   - 头部参数
