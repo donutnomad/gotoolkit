@@ -41,6 +41,7 @@ type SwaggerMethod struct {
 	Summary      string      // 摘要
 	Description  string      // 描述
 	Tags         []string    // 标签
+	Security     string      // 安全
 }
 
 // SwaggerInterface 表示 Swagger 接口

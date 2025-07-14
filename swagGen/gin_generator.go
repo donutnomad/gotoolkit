@@ -184,6 +184,7 @@ func (g *GinGenerator) generateParameterBinding(method SwaggerMethod) string {
 	// 用于跟踪已处理的 body 参数
 	hasBodyParam := false
 	hasFormParam := false
+	hasQueryParam := false
 
 	// 首先处理路径参数和查询参数
 	for _, param := range method.Parameters {
@@ -199,7 +200,7 @@ func (g *GinGenerator) generateParameterBinding(method SwaggerMethod) string {
 			case "path":
 				lines = append(lines, g.generatePathParamBinding(param))
 			case "query":
-				lines = append(lines, g.generateQueryParamBinding(param))
+				//lines = append(lines, g.generateQueryParamBinding(param))
 			case "header":
 				lines = append(lines, g.generateHeaderParamBinding(param))
 			}
@@ -216,6 +217,12 @@ func (g *GinGenerator) generateParameterBinding(method SwaggerMethod) string {
 		}
 
 		switch param.Source {
+		case "query":
+			if !hasQueryParam {
+				lines = append(lines, g.generateQueryParamBinding(param))
+				hasQueryParam = true
+				hasError = true
+			}
 		case "formData":
 			if !hasFormParam {
 				lines = append(lines, g.generateFormParamBinding(param))
@@ -324,10 +331,13 @@ func (g *GinGenerator) generatePathParamBinding(param Parameter) string {
 	return g.generateTypedParamBinding(param, paramValue)
 }
 
-// generateQueryParamBinding 生成查询参数绑定
+// generateQueryParamBinding 生成query参数绑定
 func (g *GinGenerator) generateQueryParamBinding(param Parameter) string {
-	paramValue := fmt.Sprintf(`c.Query("%s")`, param.Name)
-	return g.generateTypedParamBinding(param, paramValue)
+	varName := param.Name
+	typeName := param.Type.FullName
+
+	return fmt.Sprintf(`var %s %s
+        if err := c.ShouldBindQuery(&%s); err != nil {`, varName, typeName, varName)
 }
 
 // generateFormParamBinding 生成表单参数绑定
@@ -488,12 +498,11 @@ func (g *GinGenerator) GenerateComplete(comments map[string]string) string {
 
 // generateHelperFunctions 生成辅助函数
 func (g *GinGenerator) generateHelperFunctions() string {
-	return `//// onGinBindErr 处理绑定错误
+	return `
 // func onGinBindErr(c *gin.Context, err error) {
 //     c.JSON(400, gin.H{"error": err.Error()})
 // }
 // 
-// // onGinResponse 处理响应
 // func onGinResponse[T any](c *gin.Context, data T) {
 //     c.JSON(200, data)
 // }`

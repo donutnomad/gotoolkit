@@ -57,7 +57,9 @@ func (g *SwaggerGenerator) generateMethodComments(method SwaggerMethod, interfac
 	lines = append(lines, fmt.Sprintf("// @Produce %s", g.getProduceType(method.AcceptType)))
 
 	// Security (如果需要认证)
-	lines = append(lines, "// @Security ApiKeyAuth")
+	if len(method.Security) > 0 {
+		lines = append(lines, "// @Security "+method.Security)
+	}
 
 	// Parameters
 	paramLines := g.generateParameterComments(method.Parameters)

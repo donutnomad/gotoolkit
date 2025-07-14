@@ -53,7 +53,7 @@ func (p *AnnotationParser) ParseMethodAnnotations(method *ast.FuncDecl) (*Swagge
 
 	// 设置 Summary 和 Description
 	if len(summaryLines) > 0 {
-		swaggerMethod.Summary = strings.Join(summaryLines, " ")
+		swaggerMethod.Summary = strings.TrimSpace(strings.TrimPrefix(strings.Join(summaryLines, " "), swaggerMethod.Name))
 	}
 	if len(descriptionLines) > 0 {
 		swaggerMethod.Description = strings.Join(descriptionLines, " ")
@@ -82,12 +82,19 @@ func (p *AnnotationParser) parseSwaggerAnnotation(line string, method *SwaggerMe
 		}
 	}
 
+	// 解析 @SECURITY()
+	if reg := regexp.MustCompile(`@SECURITY\s*\(([^)]+)\)`); reg.MatchString(line) {
+		matches := reg.FindStringSubmatch(line)
+		if len(matches) == 2 {
+			method.Security = matches[1]
+		}
+	}
+
 	// 解析标签: @TAG(a,b,c)
 	if tagRegex := regexp.MustCompile(`@TAG\s*\(([^)]+)\)`); tagRegex.MatchString(line) {
 		matches := tagRegex.FindStringSubmatch(line)
 		if len(matches) == 2 {
-			tagList := strings.Split(matches[1], ",")
-			for _, tag := range tagList {
+			for _, tag := range strings.Split(matches[1], ",") {
 				trimmedTag := strings.TrimSpace(tag)
 				if trimmedTag != "" {
 					method.Tags = append(method.Tags, trimmedTag)
