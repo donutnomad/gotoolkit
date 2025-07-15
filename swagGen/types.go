@@ -44,6 +44,17 @@ type SwaggerMethod struct {
 
 type DefSlice []parsers.Definition
 
+func (s DefSlice) IsRemoved() bool {
+	for _, item := range s {
+		switch item.(type) {
+		case *parsers.Removed:
+			return true
+		default:
+		}
+	}
+	return false
+}
+
 func (s DefSlice) GetAcceptType() (string, bool) {
 	for _, item := range s {
 		switch item.(type) {

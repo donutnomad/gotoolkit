@@ -27,6 +27,8 @@ func newTagParser() *parsers.Parser {
 
 		parsers.JSON{},
 		parsers.MIME{},
+
+		parsers.Removed{},
 	)
 	if err != nil {
 		panic(err)
@@ -48,6 +50,9 @@ func (g *SwaggerGenerator) GenerateSwaggerComments() map[string]string {
 	// 为每个接口的每个方法生成注释
 	for _, iface := range g.collection.Interfaces {
 		for _, method := range iface.Methods {
+			if method.Def.IsRemoved() {
+				continue
+			}
 			methodComments := g.generateMethodComments(method, iface)
 			out[method.Name] = strings.Join(methodComments, "\n")
 		}

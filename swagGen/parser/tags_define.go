@@ -111,3 +111,8 @@ type DELETE struct {
 
 func (s DELETE) Name() string    { return "DELETE" }
 func (s DELETE) Mode() ParseMode { return ModePositional }
+
+type Removed struct{}
+
+func (s Removed) Name() string    { return "Removed" }
+func (s Removed) Mode() ParseMode { return ModePositional }

@@ -3,8 +3,12 @@ package main
 import (
 	"fmt"
 	"github.com/donutnomad/gotoolkit/internal/utils"
+	parsers "github.com/donutnomad/gotoolkit/swagGen/parser"
 	"github.com/samber/lo"
+	"golang.org/x/exp/maps"
 	"regexp"
+	"slices"
+	"sort"
 	"strings"
 )
 
@@ -23,13 +27,37 @@ func NewGinGenerator(collection *InterfaceCollection) *GinGenerator {
 }
 
 // GenerateGinCode 生成 Gin 绑定代码
-func (g *GinGenerator) GenerateGinCode(comments map[string]string) string {
+func (g *GinGenerator) GenerateGinCode(comments map[string]string) (constructCode, code string) {
 	var parts []string
+	var constructorParts []string
+
+	// 生成Gin.Handler的interface
+	var handlerInterface []string
 
 	// 为每个接口生成包装结构体和绑定方法
 	for _, iface := range g.collection.Interfaces {
+
+		var handlerItf = make(map[string]struct{})
+		var middlewareCount int
+		var middlewareMap = make(map[string][]*parsers.MiddleWare)
+		var handlerItfName = fmt.Sprintf("%sHandler", iface.Name)
+
+		for _, method := range iface.Methods {
+			for _, item := range method.Def {
+				if v, ok := item.(*parsers.MiddleWare); ok {
+					middlewareMap[method.Name] = append(middlewareMap[method.Name], v)
+					middlewareCount++
+					for _, val := range v.Value {
+						if _, exists := handlerItf[val]; !exists {
+							handlerItf[val] = struct{}{}
+						}
+					}
+				}
+			}
+		}
+
 		// 生成包装结构体
-		wrapperCode := g.generateWrapperStruct(iface)
+		constructor, wrapperCode := g.generateWrapperStruct(iface, lo.Ternary(middlewareCount > 0, handlerItfName, ""))
 		parts = append(parts, wrapperCode)
 
 		// 生成 bind 通用方法
@@ -50,7 +78,7 @@ func (g *GinGenerator) GenerateGinCode(comments map[string]string) string {
 
 		// 为每个方法生成绑定方法
 		for _, method := range iface.Methods {
-			methodCode := g.generateMethodBinding(iface, method)
+			methodCode := g.generateMethodBinding(iface, method, middlewareMap[method.Name])
 			parts = append(parts, methodCode)
 			// 在方法之间添加空行，但不在最后一个方法后添加
 			parts = append(parts, "")
@@ -64,26 +92,91 @@ func (g *GinGenerator) GenerateGinCode(comments map[string]string) string {
 		}
 		parts = append(parts, "}")
 		parts = append(parts, "") // 接口之间空行分隔
+
+		if len(handlerItf) > 0 {
+			handlerInterface = append(handlerInterface, fmt.Sprintf("type %s interface {", handlerItfName))
+			items := maps.Keys(handlerItf)
+			sort.Strings(items)
+			for _, key := range items {
+				handlerInterface = append(handlerInterface, fmt.Sprintf("%s() gin.HandlerFunc", key))
+			}
+			handlerInterface = append(handlerInterface, "}")
+			handlerInterface = append(handlerInterface, "\n")
+		}
+
+		constructorParts = append(constructorParts, constructor)
 	}
 
-	return strings.Join(parts, "\n")
+	return strings.Join(constructorParts, "\n\n"), strings.Join(slices.Concat(handlerInterface, parts), "\n")
 }
 
-// generateWrapperStruct 生成包装结构体
-func (g *GinGenerator) generateWrapperStruct(iface SwaggerInterface) string {
+// generateWrapperStruct 生成包装结构体l
+func (g *GinGenerator) generateWrapperStruct(iface SwaggerInterface, handlerItfName string) (string, string) {
 	wrapperName := iface.GetWrapperName()
+	constructorName := fmt.Sprintf("New%s", wrapperName)
+
+	if len(handlerItfName) == 0 {
+		template1 := `
+func {{.ConstructorName}}(inner {{.InterfaceName}}) *{{.WrapperName}} {
+    return &{{.WrapperName}}{
+        inner: inner,
+    }
+}
+`
+
+		data1 := map[string]interface{}{
+			"ConstructorName": constructorName,
+			"WrapperName":     wrapperName,
+			"InterfaceName":   iface.Name,
+		}
+		constructorResult := utils.MustExecuteTemplate(data1, template1)
+
+		template := `
+type {{.WrapperName}} struct {
+    inner {{.InterfaceName}}
+}
+`
+		data := map[string]interface{}{
+			"WrapperName":   wrapperName,
+			"InterfaceName": iface.Name,
+		}
+
+		result := utils.MustExecuteTemplate(data, template)
+		return strings.TrimSpace(constructorResult), strings.TrimSpace(result)
+	}
+
+	template1 := `
+func {{.ConstructorName}}(inner {{.InterfaceName}}, handler {{.HandlerName}}) *{{.WrapperName}} {
+    return &{{.WrapperName}}{
+        inner: inner,
+        handler: handler,
+    }
+}
+`
+
+	data1 := map[string]interface{}{
+		"ConstructorName": constructorName,
+		"WrapperName":     wrapperName,
+		"InterfaceName":   iface.Name,
+		"HandlerName":     handlerItfName,
+	}
+
+	constructorResult := utils.MustExecuteTemplate(data1, template1)
+
 	template := `
 type {{.WrapperName}} struct {
     inner {{.InterfaceName}}
+    handler {{.HandlerName}}
 }
 `
 	data := map[string]interface{}{
 		"WrapperName":   wrapperName,
 		"InterfaceName": iface.Name,
+		"HandlerName":   handlerItfName,
 	}
 
-	result, _ := utils.ExecuteTemplate(data, template)
-	return strings.TrimSpace(result)
+	result := utils.MustExecuteTemplate(data, template)
+	return strings.TrimSpace(constructorResult), strings.TrimSpace(result)
 }
 
 // generateBindMethod 生成通用的 bind 方法
@@ -91,15 +184,16 @@ func (g *GinGenerator) generateBindMethod(iface SwaggerInterface) string {
 	wrapperName := iface.GetWrapperName()
 
 	template := `
-func (a *{{.WrapperName}}) bind(router gin.IRoutes, method, path string, preHandlers []gin.HandlerFunc, f gin.HandlerFunc) {
+func (a *{{.WrapperName}}) bind(router gin.IRoutes, method, path string, preHandlers, innerHandlers []gin.HandlerFunc, f gin.HandlerFunc) {
     var basePath string
     if v, ok := router.(interface {
         BasePath() string
     }); ok {
         basePath = v.BasePath()
     }
-    handlers := make([]gin.HandlerFunc, 0, len(preHandlers)+1)
+    handlers := make([]gin.HandlerFunc, 0, len(preHandlers)+len(innerHandlers)+1)
     handlers = append(handlers, preHandlers...)
+    handlers = append(handlers, innerHandlers...)
     handlers = append(handlers, f)
     router.Handle(method, strings.TrimPrefix(path, basePath), handlers...)
 }
@@ -109,7 +203,7 @@ func (a *{{.WrapperName}}) bind(router gin.IRoutes, method, path string, preHand
 		"WrapperName": wrapperName,
 	}
 
-	result, _ := utils.ExecuteTemplate(data, template)
+	result := utils.MustExecuteTemplate(data, template)
 	return strings.TrimSpace(result)
 }
 
@@ -145,38 +239,73 @@ func (a *{{.WrapperName}}) {{.HandlerMethodName}}(ctx *gin.Context) {
 		"ParameterBinding":  paramBindingCode,
 		"MethodCall":        methodCallCode,
 	}
-
-	result, _ := utils.ExecuteTemplate(data, template)
-	return strings.TrimSpace(result)
+	return strings.TrimSpace(utils.MustExecuteTemplate(data, template))
 }
 
 // generateMethodBinding 生成方法绑定
-func (g *GinGenerator) generateMethodBinding(iface SwaggerInterface, method SwaggerMethod) string {
+func (g *GinGenerator) generateMethodBinding(iface SwaggerInterface, method SwaggerMethod, middlewares []*parsers.MiddleWare) string {
 	wrapperName := iface.GetWrapperName()
 	bindMethodName := fmt.Sprintf("Bind%s", method.Name)
 	handlerMethodName := method.Name
+
+	if method.Def.IsRemoved() {
+		template := `
+func (a *{{.WrapperName}}) {{.BindMethodName}}(router gin.IRoutes, preHandlers ...gin.HandlerFunc) {
+}
+`
+		data := map[string]interface{}{
+			"WrapperName":    wrapperName,
+			"BindMethodName": bindMethodName,
+		}
+		return strings.TrimSpace(utils.MustExecuteTemplate(data, template))
+	}
 
 	// 转换路径格式：{param} -> :param
 	ginPaths := lo.Map(method.GetPaths(), func(item string, index int) string {
 		return convertPathToGinFormat(item)
 	})
 
-	template := `
+	if len(middlewares) > 0 {
+		template := `
 func (a *{{.WrapperName}}) {{.BindMethodName}}(router gin.IRoutes, preHandlers ...gin.HandlerFunc) { {{- range .GinPath}}
-    a.bind(router, "{{$.HTTPMethod}}", "{{.}}", preHandlers, a.{{$.HandlerMethodName}}){{end}}
+	var handlers []gin.HandlerFunc
+	if a.handler != nil {
+		handlers = []gin.HandlerFunc{
+			{{range $.Handlers}}a.handler.{{.}}(),
+			{{end}}
+		}
+	}
+	a.bind(router, "{{$.HTTPMethod}}", "{{.}}", preHandlers, handlers, a.{{$.HandlerMethodName}}){{end}}
 }
 `
 
-	data := map[string]interface{}{
-		"WrapperName":       wrapperName,
-		"BindMethodName":    bindMethodName,
-		"HTTPMethod":        method.GetHTTPMethod(),
-		"GinPath":           ginPaths,
-		"HandlerMethodName": handlerMethodName,
-	}
+		data := map[string]interface{}{
+			"WrapperName":    wrapperName,
+			"BindMethodName": bindMethodName,
+			"Handlers": lo.Flatten(lo.Map(middlewares, func(item *parsers.MiddleWare, index int) []string {
+				return item.Value
+			})),
+			"HTTPMethod":        method.GetHTTPMethod(),
+			"GinPath":           ginPaths,
+			"HandlerMethodName": handlerMethodName,
+		}
+		return strings.TrimSpace(utils.MustExecuteTemplate(data, template))
+	} else {
+		template := `
+func (a *{{.WrapperName}}) {{.BindMethodName}}(router gin.IRoutes, preHandlers ...gin.HandlerFunc) { {{- range .GinPath}}
+	a.bind(router, "{{$.HTTPMethod}}", "{{.}}", preHandlers, nil, a.{{$.HandlerMethodName}}){{end}}
+}
+`
 
-	result, _ := utils.ExecuteTemplate(data, template)
-	return strings.TrimSpace(result)
+		data := map[string]interface{}{
+			"WrapperName":       wrapperName,
+			"BindMethodName":    bindMethodName,
+			"HTTPMethod":        method.GetHTTPMethod(),
+			"GinPath":           ginPaths,
+			"HandlerMethodName": handlerMethodName,
+		}
+		return strings.TrimSpace(utils.MustExecuteTemplate(data, template))
+	}
 }
 
 // generateParameterBinding 生成参数绑定代码
@@ -385,53 +514,15 @@ func (g *GinGenerator) isErrorType(typeInfo TypeInfo) bool {
 		strings.HasSuffix(typeInfo.TypeName, "Error")
 }
 
-// GenerateConstructors 生成构造函数
-func (g *GinGenerator) GenerateConstructors() string {
-	var parts []string
-
-	for _, iface := range g.collection.Interfaces {
-		constructor := g.generateConstructor(iface)
-		parts = append(parts, constructor)
-	}
-
-	return strings.Join(parts, "\n\n")
-}
-
-// generateConstructor 生成构造函数
-func (g *GinGenerator) generateConstructor(iface SwaggerInterface) string {
-	wrapperName := iface.GetWrapperName()
-	constructorName := fmt.Sprintf("New%s", wrapperName)
-
-	template := `
-func {{.ConstructorName}}(inner {{.InterfaceName}}) *{{.WrapperName}} {
-    return &{{.WrapperName}}{
-        inner: inner,
-    }
-}
-`
-
-	data := map[string]interface{}{
-		"ConstructorName": constructorName,
-		"WrapperName":     wrapperName,
-		"InterfaceName":   iface.Name,
-	}
-
-	result, _ := utils.ExecuteTemplate(data, template)
-	return strings.TrimSpace(result)
-}
-
 // GenerateComplete 生成完整的 Gin 绑定代码
 func (g *GinGenerator) GenerateComplete(comments map[string]string) string {
 	var parts []string
 
-	// 生成构造函数
-	constructors := g.GenerateConstructors()
-	if constructors != "" {
-		parts = append(parts, constructors)
-	}
-
 	// 生成包装结构体和绑定方法
-	ginCode := g.GenerateGinCode(comments)
+	constructorCode, ginCode := g.GenerateGinCode(comments)
+	if constructorCode != "" {
+		parts = append(parts, constructorCode)
+	}
 	if ginCode != "" {
 		parts = append(parts, ginCode)
 	}

@@ -70,22 +70,39 @@ func (p *Parser) Parse(line string) (any, error) {
 		return nil, fmt.Errorf("标签格式错误: 必须以 '@' 开始")
 	}
 
-	var tagName, content string
+	var (
+		tagName string
+		content string
+		text    string // 新增：存储标签后的自由文本
+	)
 
-	// 检查是否存在括号，以决定如何提取 tagName 和 content
+	// 检查是否存在括号
 	firstParen := strings.Index(tagLine, "(")
 	if firstParen == -1 {
-		// 格式: @TAG-NAME (无括号)
-		tagName = tagLine[1:]
-		content = "" // 无内容
+		// 无括号格式: @TAG-NAME 自由文本
+		parts := strings.SplitN(tagLine[1:], " ", 2) // 用第一个空格分隔标签名和自由文本
+		tagName = parts[0]
+		if len(parts) > 1 {
+			text = strings.TrimSpace(parts[1])
+		}
 	} else {
-		// 格式: @TAG-NAME(content)
+		// 有括号格式: @TAG-NAME(content) 自由文本
 		if !strings.HasSuffix(tagLine, ")") {
 			return nil, fmt.Errorf("标签格式错误: 找到开括号 '(' 但结尾没有匹配的 ')'")
 		}
+
+		// 提取标签名和括号内容
 		tagName = tagLine[1:firstParen]
-		content = tagLine[firstParen+1 : len(tagLine)-1]
+		content = tagLine[firstParen+1 : strings.LastIndex(tagLine, ")")]
+
+		// 检查括号后是否有自由文本
+		rest := strings.TrimSpace(tagLine[strings.LastIndex(tagLine, ")")+1:])
+		if rest != "" {
+			text = rest
+		}
 	}
+
+	_ = text
 
 	info, ok := p.definitions[tagName]
 	if !ok {

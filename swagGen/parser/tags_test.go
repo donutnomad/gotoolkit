@@ -7,7 +7,7 @@ import (
 
 func TestTag(t *testing.T) {
 	parser := NewParser()
-	err := parser.Register(Tag{}, Security{}, GET{}, Header{}, FormReq{})
+	err := parser.Register(Tag{}, Security{}, GET{}, Header{}, FormReq{}, Removed{})
 	if err != nil {
 		panic(err)
 	}
@@ -37,6 +37,7 @@ func TestTag(t *testing.T) {
 
 		"// @FORM-REQ", // 成功: 类型=*parsers.FormReq, 值=&parsers.FormReq{}
 		"// @SECURITY", // 验证失败 (标签: SECURITY): 字段 'Value' 是必须的，但值为空
+		"@Removed",
 	}
 
 	for _, tc := range testCases {
