@@ -120,6 +120,9 @@ func (p *AnnotationParser) parseSwaggerAnnotation(line string, method *SwaggerMe
 				method.ContentType = matches[1]
 			}
 		}
+	default:
+		method.ContentType = "application/json"
+		method.AcceptType = "application/json"
 	}
 }
 

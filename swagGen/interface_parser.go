@@ -207,11 +207,13 @@ func (p *InterfaceParser) parseMethodParameters(fileSet *token.FileSet, fileBs [
 	for _, routerPath := range swaggerMethod.Paths {
 		pathParams := annotationParser.extractPathParameters(routerPath)
 		for _, pathParam := range pathParams {
-			_, ok := lo.Find(allParams, func(item Parameter) bool {
+			_, idx, ok := lo.FindIndexOf(allParams, func(item Parameter) bool {
 				return item.Name == pathParam.Name || (item.Alias != "" && item.Alias == pathParam.Name)
 			})
 			if !ok {
 				panic(fmt.Sprintf("path %s param `%s` was not found in %s \n Use @PARAM(%s) to fix it.", routerPath, pathParam.Name, clean.Replace(text), pathParam.Name))
+			} else {
+				allParams[idx].PathName = pathParam.Name
 			}
 		}
 	}

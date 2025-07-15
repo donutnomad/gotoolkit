@@ -279,13 +279,13 @@ func (info *TypeInfo) GetSwaggerFormat() string {
 
 	switch typeName {
 	case "int32":
-		return "int32"
+		return "integer"
 	case "int64":
-		return "int64"
+		return "integer"
 	case "float32":
-		return "float"
+		return "number"
 	case "float64":
-		return "double"
+		return "number"
 	default:
 		return ""
 	}

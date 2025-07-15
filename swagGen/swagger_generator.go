@@ -128,8 +128,12 @@ func (g *SwaggerGenerator) generateParameterComment(param Parameter) string {
 			param.Name, param.Type.FullName, required, description)
 	}
 
+	n := param.Name
+	if len(param.PathName) > 0 {
+		n = param.PathName
+	}
 	return fmt.Sprintf("// @Param %s %s %s %s \"%s\"",
-		param.Name, param.Source, paramType, required, description)
+		n, param.Source, paramType, required, description)
 }
 
 // generateSuccessComment 生成成功响应注释

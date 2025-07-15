@@ -21,6 +21,7 @@ type TypeInfo struct {
 // Parameter 表示方法参数
 type Parameter struct {
 	Name     string   // 参数名
+	PathName string   // 路径中的参数名
 	Alias    string   // 别名
 	Type     TypeInfo // 参数类型
 	Source   string   // @PARAM, @FORM, @JSON, @BODY
