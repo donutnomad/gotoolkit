@@ -2,13 +2,42 @@ package main
 
 import (
 	"fmt"
+	parsers "github.com/donutnomad/gotoolkit/swagGen/parser"
+	"github.com/samber/lo"
 	"strings"
 )
+
+func newTagParser() *parsers.Parser {
+	parser := parsers.NewParser()
+	err := parser.Register(parsers.Tag{},
+		parsers.GET{},
+		parsers.POST{},
+		parsers.PUT{},
+		parsers.PATCH{},
+		parsers.DELETE{},
+
+		parsers.Security{},
+		parsers.Tag{},
+		parsers.HEADER{},
+		parsers.MiddleWare{},
+
+		parsers.JsonReq{},
+		parsers.FormReq{},
+
+		parsers.JSON{},
+		parsers.MIME{},
+	)
+	if err != nil {
+		panic(err)
+	}
+	return parser
+}
 
 // NewSwaggerGenerator 创建 Swagger 生成器
 func NewSwaggerGenerator(collection *InterfaceCollection) *SwaggerGenerator {
 	return &SwaggerGenerator{
 		collection: collection,
+		tagsParser: newTagParser(),
 	}
 }
 
@@ -18,15 +47,32 @@ func (g *SwaggerGenerator) GenerateSwaggerComments() map[string]string {
 	// 为每个接口的每个方法生成注释
 	for _, iface := range g.collection.Interfaces {
 		for _, method := range iface.Methods {
-			methodComments := g.generateMethodComments(method, iface.Name)
+			methodComments := g.generateMethodComments(method, iface)
 			out[method.Name] = strings.Join(methodComments, "\n")
 		}
 	}
 	return out
 }
 
+func mergeDefs[T any](ifaceDefs, methodDefs []parsers.Definition, f func(item parsers.Definition) (T, bool), post func([]T)) {
+	var methodTags []T
+	for _, item := range methodDefs {
+		if v, ok := f(item); ok {
+			methodTags = append(methodTags, v)
+		}
+	}
+	if len(methodTags) == 0 {
+		for _, item := range ifaceDefs {
+			if v, ok := f(item); ok {
+				methodTags = append(methodTags, v)
+			}
+		}
+	}
+	post(methodTags)
+}
+
 // generateMethodComments 生成单个方法的 Swagger 注释
-func (g *SwaggerGenerator) generateMethodComments(method SwaggerMethod, interfaceName string) []string {
+func (g *SwaggerGenerator) generateMethodComments(method SwaggerMethod, iface SwaggerInterface) []string {
 	var lines []string
 
 	// 方法名注释
@@ -44,30 +90,64 @@ func (g *SwaggerGenerator) generateMethodComments(method SwaggerMethod, interfac
 		lines = append(lines, fmt.Sprintf("// @Description %s", method.Description))
 	}
 
-	// Tags - 使用接口名作为标签
-	tags := method.Tags
-	if len(tags) > 0 {
-		lines = append(lines, fmt.Sprintf("// @Tags %s", strings.Join(tags, ",")))
-	}
-
-	contentType := method.ContentType
-	// Accept (请求内容类型)
-	for _, p := range method.Parameters {
-		if p.Source == "formData" {
-			contentType = "application/x-www-form-urlencoded"
-		} else {
-			contentType = "application/json"
+	// Tags - 应用覆盖和排除逻辑
+	mergeDefs[string](iface.CommonDef, method.Def, func(item parsers.Definition) (string, bool) {
+		v, ok := item.(*parsers.Tag)
+		if !ok {
+			return "", false
 		}
-	}
-	lines = append(lines, fmt.Sprintf("// @Accept %s", g.getAcceptType(contentType)))
+		return v.Value, true
+	}, func(i []string) {
+		if len(i) > 0 {
+			lines = append(lines, fmt.Sprintf("// @Tags %s", strings.Join(i, ",")))
+		}
+	})
 
+	// Accept (请求内容类型)
+	if method.GetHTTPMethod() != "GET" {
+		mergeDefs[string](iface.CommonDef, method.Def, func(item parsers.Definition) (string, bool) {
+			return DefSlice{item}.GetAcceptType()
+		}, func(i []string) {
+			if len(i) > 0 {
+				lines = append(lines, fmt.Sprintf("// @Accept %s", i[0]))
+			}
+		})
+	}
 	// Produce (响应内容类型)
-	lines = append(lines, fmt.Sprintf("// @Produce %s", g.getProduceType(method.AcceptType)))
+	mergeDefs[string](iface.CommonDef, method.Def, func(item parsers.Definition) (string, bool) {
+		return DefSlice{item}.GetContentType()
+	}, func(i []string) {
+		var ret = "json"
+		if len(i) > 0 {
+			ret = i[0]
+		}
+		lines = append(lines, fmt.Sprintf("// @Produce %s", ret))
+	})
 
-	// Security (如果需要认证)
-	if len(method.Security) > 0 {
-		lines = append(lines, "// @Security "+method.Security)
-	}
+	// Security - 应用覆盖和排除逻辑
+	mergeDefs[string](iface.CommonDef, method.Def, func(item parsers.Definition) (string, bool) {
+		v, ok := item.(*parsers.Security)
+		if !ok {
+			return "", false
+		}
+		ok = false
+		if len(v.Include) > 0 {
+			if lo.Contains(v.Include, method.Name) {
+				ok = true
+			}
+		} else if len(v.Exclude) > 0 {
+			if !lo.Contains(v.Include, method.Name) {
+				ok = true
+			}
+		} else {
+			ok = true
+		}
+		return v.Value, ok
+	}, func(i []string) {
+		if len(i) > 0 {
+			lines = append(lines, fmt.Sprintf("// @Security %s", strings.Join(i, ",")))
+		}
+	})
 
 	// Parameters
 	paramLines := g.generateParameterComments(method.Parameters)
@@ -78,9 +158,8 @@ func (g *SwaggerGenerator) generateMethodComments(method SwaggerMethod, interfac
 	lines = append(lines, successLine)
 
 	// Router
-	for _, pathRouter := range method.Paths {
-		routerLine := fmt.Sprintf("// @Router %s [%s]", pathRouter, strings.ToLower(method.HTTPMethod))
-		lines = append(lines, routerLine)
+	for _, pathRouter := range method.GetPaths() {
+		lines = append(lines, fmt.Sprintf("// @Router %s [%s]", pathRouter, strings.ToLower(method.GetHTTPMethod())))
 	}
 
 	return lines
@@ -109,31 +188,18 @@ func (g *SwaggerGenerator) generateParameterComment(param Parameter) string {
 
 	// 获取参数类型
 	paramType := g.getParameterType(param)
-
 	// 确定是否必需
-	required := "true"
-	if !param.Required {
-		required = "false"
-	}
-
+	required := lo.Ternary(param.Required, "true", "false")
 	// 获取描述
-	description := param.Comment
-	if description == "" {
-		description = param.Name
-	}
+	description := lo.Ternary(param.Comment == "", param.Name, param.Comment)
 
 	// 特殊处理 body 参数
 	if param.Source == "body" {
-		return fmt.Sprintf("// @Param %s body %s %s \"%s\"",
-			param.Name, param.Type.FullName, required, description)
+		return fmt.Sprintf("// @Param %s body %s %s \"%s\"", param.Name, param.Type.FullName, required, description)
 	}
 
-	n := param.Name
-	if len(param.PathName) > 0 {
-		n = param.PathName
-	}
-	return fmt.Sprintf("// @Param %s %s %s %s \"%s\"",
-		n, param.Source, paramType, required, description)
+	n := lo.Ternary(len(param.PathName) > 0, param.PathName, param.Name)
+	return fmt.Sprintf("// @Param %s %s %s %s \"%s\"", n, param.Source, paramType, required, description)
 }
 
 // generateSuccessComment 生成成功响应注释
@@ -150,41 +216,6 @@ func (g *SwaggerGenerator) generateSuccessComment(responseType TypeInfo) string 
 	}
 
 	return fmt.Sprintf("// @Success 200 {object} %s", responseTypeStr)
-}
-
-// getAcceptType 获取 Accept 类型
-func (g *SwaggerGenerator) getAcceptType(contentType string) string {
-	switch contentType {
-	case "application/json":
-		return "json"
-	case "application/x-www-form-urlencoded":
-		return "x-www-form-urlencoded"
-	case "multipart/form-data":
-		return "multipart/form-data"
-	case "application/xml":
-		return "xml"
-	case "text/plain":
-		return "plain"
-	default:
-		// 自定义 MIME 类型直接返回
-		return contentType
-	}
-}
-
-// getProduceType 获取 Produce 类型
-func (g *SwaggerGenerator) getProduceType(acceptType string) string {
-	switch acceptType {
-	case "application/json":
-		return "json"
-	case "application/xml":
-		return "xml"
-	case "text/plain":
-		return "plain"
-	case "text/html":
-		return "html"
-	default:
-		return "json" // 默认 JSON
-	}
 }
 
 // getParameterType 获取参数类型字符串
@@ -273,34 +304,3 @@ func (g *SwaggerGenerator) needsCastImport() bool {
 func (g *SwaggerGenerator) GenerateTypeReferences() string {
 	return g.collection.ImportMgr.GetTypeReferences()
 }
-
-//
-//// GenerateComplete 生成完整的文件内容
-//func (g *SwaggerGenerator) GenerateComplete(packageName string) string {
-//	var parts []string
-//
-//	// 文件头部
-//	parts = append(parts, g.GenerateFileHeader(packageName))
-//
-//	// 导入声明
-//	imports := g.GenerateImports()
-//	if imports != "" {
-//		parts = append(parts, imports)
-//		parts = append(parts, "")
-//	}
-//
-//	// 类型引用
-//	typeRefs := g.GenerateTypeReferences()
-//	if typeRefs != "" {
-//		parts = append(parts, typeRefs)
-//		parts = append(parts, "")
-//	}
-//
-//	// Swagger 注释
-//	swaggerComments := g.GenerateSwaggerComments()
-//	if swaggerComments != "" {
-//		parts = append(parts, swaggerComments)
-//	}
-//
-//	return strings.Join(parts, "\n")
-//}

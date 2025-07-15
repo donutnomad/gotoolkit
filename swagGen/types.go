@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"github.com/donutnomad/gotoolkit/internal/xast"
+	parsers "github.com/donutnomad/gotoolkit/swagGen/parser"
 	"go/token"
 )
 
@@ -24,7 +25,7 @@ type Parameter struct {
 	PathName string   // 路径中的参数名
 	Alias    string   // 别名
 	Type     TypeInfo // 参数类型
-	Source   string   // @PARAM, @FORM, @JSON, @BODY
+	Source   string   // path,header
 	Required bool     // 是否必需
 	Comment  string   // 参数注释
 }
@@ -32,17 +33,86 @@ type Parameter struct {
 // SwaggerMethod 表示 Swagger 方法
 type SwaggerMethod struct {
 	Name         string      // 方法名
-	HTTPMethod   string      // HTTP 方法 (GET, POST, PUT, DELETE)
-	Paths        []string    // API 路径
 	Parameters   []Parameter // 参数列表
 	ResponseType TypeInfo    // 返回类型
-	ContentType  string      // 请求内容类型
-	AcceptType   string      // 接受的内容类型
-	Comments     []string    // 方法注释
-	Summary      string      // 摘要
-	Description  string      // 描述
-	Tags         []string    // 标签
-	Security     string      // 安全
+
+	Summary     string // 摘要
+	Description string // 描述
+
+	Def DefSlice
+}
+
+type DefSlice []parsers.Definition
+
+func (s DefSlice) GetAcceptType() (string, bool) {
+	for _, item := range s {
+		switch item.(type) {
+		case *parsers.FormReq:
+			return "x-www-form-urlencoded", true
+		case *parsers.JsonReq:
+			return "json", true
+		default:
+		}
+	}
+	return "json", false
+}
+
+func (s DefSlice) GetContentType() (string, bool) {
+	for _, item := range s {
+		switch v := item.(type) {
+		case *parsers.JSON:
+			return "json", true
+		case *parsers.MIME:
+			return v.Value, true
+		default:
+		}
+	}
+	return "json", false
+}
+
+func (s SwaggerMethod) GetPaths() []string {
+	var ret []string
+	for _, item := range s.Def {
+		switch v := item.(type) {
+		case *parsers.GET:
+			ret = append(ret, v.Value)
+		case *parsers.POST:
+			ret = append(ret, v.Value)
+		case *parsers.PUT:
+			ret = append(ret, v.Value)
+		case *parsers.DELETE:
+			ret = append(ret, v.Value)
+		case *parsers.PATCH:
+			ret = append(ret, v.Value)
+		default:
+		}
+	}
+	return ret
+}
+
+func (s SwaggerMethod) GetHTTPMethod() string {
+	for _, item := range s.Def {
+		switch v := item.(type) {
+		case *parsers.GET:
+			return v.Name()
+		case *parsers.POST:
+			return v.Name()
+		case *parsers.PUT:
+			return v.Name()
+		case *parsers.DELETE:
+			return v.Name()
+		case *parsers.PATCH:
+			return v.Name()
+		default:
+		}
+	}
+	return "GET"
+}
+
+// CommonAnnotation 表示可应用于接口中所有方法的通用注释，支持排除特定方法。
+type CommonAnnotation struct {
+	Value   string   // 注释的值，例如 "Company" 或 "ApiKeyAuth"
+	Exclude []string // 要从此注释中排除的方法名列表
 }
 
 // SwaggerInterface 表示 Swagger 接口
@@ -52,6 +122,7 @@ type SwaggerInterface struct {
 	PackagePath string               // 包路径
 	Comments    []string             // 接口注释
 	Imports     xast.ImportInfoSlice // 导入信息
+	CommonDef   DefSlice
 }
 
 func (w SwaggerInterface) GetWrapperName() string {
@@ -88,7 +159,8 @@ type ImportInfo struct {
 
 // AnnotationParser 注释解析器
 type AnnotationParser struct {
-	fileSet *token.FileSet
+	fileSet    *token.FileSet
+	tagsParser *parsers.Parser
 }
 
 // InterfaceParser 接口解析器
@@ -106,6 +178,7 @@ type ReturnTypeParser struct {
 // SwaggerGenerator Swagger 生成器
 type SwaggerGenerator struct {
 	collection *InterfaceCollection
+	tagsParser *parsers.Parser
 }
 
 // GinGenerator Gin 绑定代码生成器

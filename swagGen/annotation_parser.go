@@ -1,6 +1,7 @@
 package main
 
 import (
+	parsers "github.com/donutnomad/gotoolkit/swagGen/parser"
 	"go/ast"
 	"go/token"
 	"regexp"
@@ -10,7 +11,8 @@ import (
 // NewAnnotationParser 创建注释解析器
 func NewAnnotationParser(fileSet *token.FileSet) *AnnotationParser {
 	return &AnnotationParser{
-		fileSet: fileSet,
+		fileSet:    fileSet,
+		tagsParser: newTagParser(),
 	}
 }
 
@@ -21,16 +23,28 @@ func (p *AnnotationParser) ParseMethodAnnotations(method *ast.FuncDecl) (*Swagge
 	}
 
 	swaggerMethod := &SwaggerMethod{
-		Name:        method.Name.Name,
-		HTTPMethod:  "POST",                              // 默认值
-		ContentType: "application/x-www-form-urlencoded", // 默认值
-		AcceptType:  "application/json",                  // 默认值
-		Tags:        []string{},                          // 初始化为空切片
+		Name: method.Name.Name,
 	}
 
 	var commentLines []string
 	var summaryLines []string
 	var descriptionLines []string
+
+	// // 解析接口注释(作为公共注释)
+	//			if genDecl.Doc != nil {
+	//				for _, comment := range genDecl.Doc.List {
+	//					line := strings.TrimSpace(strings.TrimPrefix(comment.Text, "//"))
+	//					if strings.HasPrefix(line, "@") {
+	//						parse, err := ps.Parse(line)
+	//						if err != nil {
+	//							panic(err)
+	//						}
+	//						swaggerInterface.CommonDef = append(swaggerInterface.CommonDef, parse.(parsers.Definition))
+	//					}
+	//				}
+	//			}
+
+	var isDescription = false
 
 	// 解析所有注释行
 	for _, comment := range method.Doc.List {
@@ -39,14 +53,22 @@ func (p *AnnotationParser) ParseMethodAnnotations(method *ast.FuncDecl) (*Swagge
 
 		// 解析特殊注释
 		if strings.HasPrefix(line, "@") {
-			p.parseSwaggerAnnotation(line, swaggerMethod)
+			isDescription = false
+			parse, err := p.tagsParser.Parse(line)
+			if err != nil {
+				panic(err)
+			}
+			swaggerMethod.Def = append(swaggerMethod.Def, parse.(parsers.Definition))
 		} else if line != "" {
 			// 第一行非空注释作为 Summary
 			if len(summaryLines) == 0 {
 				summaryLines = append(summaryLines, line)
+				isDescription = true
 			} else {
-				// 后续注释作为 Description
-				descriptionLines = append(descriptionLines, line)
+				if isDescription {
+					// 后续注释作为 Description
+					descriptionLines = append(descriptionLines, line)
+				}
 			}
 		}
 	}
@@ -59,71 +81,12 @@ func (p *AnnotationParser) ParseMethodAnnotations(method *ast.FuncDecl) (*Swagge
 		swaggerMethod.Description = strings.Join(descriptionLines, " ")
 	}
 
-	swaggerMethod.Comments = commentLines
-
 	// 如果没有找到任何 Swagger 注释，返回 nil
-	if len(swaggerMethod.Paths) == 0 {
+	if len(swaggerMethod.GetPaths()) == 0 {
 		return nil, nil
 	}
 
 	return swaggerMethod, nil
-}
-
-// parseSwaggerAnnotation 解析 Swagger 注释
-func (p *AnnotationParser) parseSwaggerAnnotation(line string, method *SwaggerMethod) {
-	line = strings.TrimSpace(line)
-
-	// 解析 HTTP 方法和路径: @POST(/api/v1/swap/v1/{id})
-	if httpMethodRegex := regexp.MustCompile(`@(GET|POST|PUT|DELETE|PATCH)\s*\(([^)]+)\)`); httpMethodRegex.MatchString(line) {
-		matches := httpMethodRegex.FindStringSubmatch(line)
-		if len(matches) == 3 {
-			method.HTTPMethod = matches[1]
-			method.Paths = append(method.Paths, matches[2])
-		}
-	}
-
-	// 解析 @SECURITY()
-	if reg := regexp.MustCompile(`@SECURITY\s*\(([^)]+)\)`); reg.MatchString(line) {
-		matches := reg.FindStringSubmatch(line)
-		if len(matches) == 2 {
-			method.Security = matches[1]
-		}
-	}
-
-	// 解析标签: @TAG(a,b,c)
-	if tagRegex := regexp.MustCompile(`@TAG\s*\(([^)]+)\)`); tagRegex.MatchString(line) {
-		matches := tagRegex.FindStringSubmatch(line)
-		if len(matches) == 2 {
-			for _, tag := range strings.Split(matches[1], ",") {
-				trimmedTag := strings.TrimSpace(tag)
-				if trimmedTag != "" {
-					method.Tags = append(method.Tags, trimmedTag)
-				}
-			}
-		}
-	}
-
-	// 解析内容类型
-	switch {
-	case strings.HasPrefix(line, "@FORM"):
-		method.ContentType = "application/x-www-form-urlencoded"
-	case strings.HasPrefix(line, "@JSON"):
-		method.ContentType = "application/json"
-		method.AcceptType = "application/json"
-	case strings.HasPrefix(line, "@MULTIPART"):
-		method.ContentType = "multipart/form-data"
-	case strings.HasPrefix(line, "@MIME"):
-		// 解析自定义 MIME 类型: @MIME(application/x-json-stream)
-		if mimeRegex := regexp.MustCompile(`@MIME\s*\(([^)]+)\)`); mimeRegex.MatchString(line) {
-			matches := mimeRegex.FindStringSubmatch(line)
-			if len(matches) == 2 {
-				method.ContentType = matches[1]
-			}
-		}
-	default:
-		method.ContentType = "application/json"
-		method.AcceptType = "application/json"
-	}
 }
 
 // ParseParameterAnnotations 解析参数注释
@@ -145,12 +108,6 @@ func (p *AnnotationParser) ParseParameterAnnotations(paramName string, tag strin
 				param.Alias = matches[1]
 			}
 		}
-	case strings.HasPrefix(line, "@FORM"):
-		param.Source = "formData"
-	case strings.HasPrefix(line, "@JSON"), strings.HasPrefix(line, "@BODY"):
-		param.Source = "body"
-	case strings.HasPrefix(line, "@QUERY"):
-		param.Source = "query"
 	case strings.HasPrefix(line, "@HEADER"):
 		param.Source = "header"
 	}
@@ -179,4 +136,36 @@ func (p *AnnotationParser) extractPathParameters(path string) []Parameter {
 	}
 
 	return parameters
+}
+
+// ParseCommonAnnotation 解析接口级别的通用注释，支持 exclude 语法
+// 例如: @TAG(Company;exclude="StartTransfer,GetTokenHistory")
+func (p *AnnotationParser) ParseCommonAnnotation(line string) *CommonAnnotation {
+	// 匹配括号内的内容
+	re := regexp.MustCompile(`\(([^)]+)\)`)
+	matches := re.FindStringSubmatch(line)
+	if len(matches) < 2 {
+		return nil
+	}
+
+	content := matches[1]
+	parts := strings.SplitN(content, ";", 2)
+	value := strings.TrimSpace(parts[0])
+
+	var excludes []string
+	if len(parts) > 1 {
+		excludePart := strings.TrimSpace(parts[1])
+		if strings.HasPrefix(excludePart, "exclude=") {
+			excludeStr := strings.TrimPrefix(excludePart, "exclude=")
+			excludeStr = strings.Trim(excludeStr, `"`)
+			for _, item := range strings.Split(excludeStr, ",") {
+				excludes = append(excludes, strings.TrimSpace(item))
+			}
+		}
+	}
+
+	return &CommonAnnotation{
+		Value:   value,
+		Exclude: excludes,
+	}
 }

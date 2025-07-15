@@ -38,7 +38,7 @@ func (g *GinGenerator) GenerateGinCode(comments map[string]string) string {
 		parts = append(parts, "")
 
 		// 为每个方法生成处理器方法
-		for i, method := range iface.Methods {
+		for _, method := range iface.Methods {
 			// 添加注释
 			if v, ok := comments[method.Name]; ok {
 				parts = append(parts, v)
@@ -46,16 +46,14 @@ func (g *GinGenerator) GenerateGinCode(comments map[string]string) string {
 			handlerCode := g.generateHandlerMethod(iface, method)
 			parts = append(parts, handlerCode)
 			parts = append(parts, "")
-			_ = i
 		}
 
 		// 为每个方法生成绑定方法
-		for i, method := range iface.Methods {
+		for _, method := range iface.Methods {
 			methodCode := g.generateMethodBinding(iface, method)
 			parts = append(parts, methodCode)
 			// 在方法之间添加空行，但不在最后一个方法后添加
 			parts = append(parts, "")
-			_ = i
 		}
 
 		// BindAll 方法
@@ -65,7 +63,6 @@ func (g *GinGenerator) GenerateGinCode(comments map[string]string) string {
 			parts = append(parts, fmt.Sprintf("	a.%s(router, preHandlers...)", fmt.Sprintf("Bind%s", method.Name)))
 		}
 		parts = append(parts, "}")
-
 		parts = append(parts, "") // 接口之间空行分隔
 	}
 
@@ -75,13 +72,11 @@ func (g *GinGenerator) GenerateGinCode(comments map[string]string) string {
 // generateWrapperStruct 生成包装结构体
 func (g *GinGenerator) generateWrapperStruct(iface SwaggerInterface) string {
 	wrapperName := iface.GetWrapperName()
-
 	template := `
 type {{.WrapperName}} struct {
     inner {{.InterfaceName}}
 }
 `
-
 	data := map[string]interface{}{
 		"WrapperName":   wrapperName,
 		"InterfaceName": iface.Name,
@@ -162,7 +157,7 @@ func (g *GinGenerator) generateMethodBinding(iface SwaggerInterface, method Swag
 	handlerMethodName := method.Name
 
 	// 转换路径格式：{param} -> :param
-	ginPaths := lo.Map(method.Paths, func(item string, index int) string {
+	ginPaths := lo.Map(method.GetPaths(), func(item string, index int) string {
 		return convertPathToGinFormat(item)
 	})
 
@@ -175,7 +170,7 @@ func (a *{{.WrapperName}}) {{.BindMethodName}}(router gin.IRoutes, preHandlers .
 	data := map[string]interface{}{
 		"WrapperName":       wrapperName,
 		"BindMethodName":    bindMethodName,
-		"HTTPMethod":        method.HTTPMethod,
+		"HTTPMethod":        method.GetHTTPMethod(),
 		"GinPath":           ginPaths,
 		"HandlerMethodName": handlerMethodName,
 	}
@@ -187,75 +182,32 @@ func (a *{{.WrapperName}}) {{.BindMethodName}}(router gin.IRoutes, preHandlers .
 // generateParameterBinding 生成参数绑定代码
 func (g *GinGenerator) generateParameterBinding(method SwaggerMethod) string {
 	var lines []string
-	var hasError bool
 
-	// 用于跟踪已处理的 body 参数
-	hasBodyParam := false
-	hasFormParam := false
-	hasQueryParam := false
-
-	// 首先处理路径参数和查询参数
-	for _, param := range method.Parameters {
-		// 跳过 gin.Context 和 context.Context 参数
+	for i, param := range method.Parameters {
 		if param.Type.FullName == "*gin.Context" ||
 			param.Type.TypeName == "Context" ||
 			strings.Contains(param.Type.FullName, "context.Context") {
 			continue
 		}
-
-		if param.Source == "path" || param.Source == "query" || param.Source == "header" {
-			switch param.Source {
-			case "path":
-				lines = append(lines, g.generatePathParamBinding(param))
-			case "query":
-				//lines = append(lines, g.generateQueryParamBinding(param))
-			case "header":
-				lines = append(lines, g.generateHeaderParamBinding(param))
-			}
-		}
-	}
-
-	// 然后处理需要绑定的参数（表单和 body）
-	for _, param := range method.Parameters {
-		// 跳过 gin.Context 和 context.Context 参数
-		if param.Type.FullName == "*gin.Context" ||
-			param.Type.TypeName == "Context" ||
-			strings.Contains(param.Type.FullName, "context.Context") {
+		if param.Source == "path" {
+			// 来源于路径的参数
+			lines = append(lines, g.generatePathParamBinding(param))
+			continue
+		} else if param.Source == "header" {
+			// 来源于header的参数
+			lines = append(lines, g.generateHeaderParamBinding(param))
 			continue
 		}
-
-		switch param.Source {
-		case "query":
-			if !hasQueryParam {
+		if i == len(method.Parameters)-1 {
+			// 默认的
+			if method.GetHTTPMethod() == "GET" {
 				lines = append(lines, g.generateQueryParamBinding(param))
-				hasQueryParam = true
-				hasError = true
-			}
-		case "formData":
-			if !hasFormParam {
+			} else if v, _ := method.Def.GetAcceptType(); v == "json" {
+				lines = append(lines, g.generateBodyParamBinding(param))
+			} else {
 				lines = append(lines, g.generateFormParamBinding(param))
-				hasFormParam = true
-				hasError = true
-			}
-		case "body":
-			if !hasBodyParam {
-				// 检查是否应该使用JSON绑定
-				if method.ContentType == "application/json" {
-					lines = append(lines, g.generateBodyParamBinding(param))
-				} else {
-					lines = append(lines, g.generateFormParamBinding(param))
-				}
-				hasBodyParam = true
-				hasError = true
 			}
 		}
-	}
-
-	// 添加错误处理
-	if hasError {
-		lines = append(lines, "            onGinBindErr(ctx, err)")
-		lines = append(lines, "            return")
-		lines = append(lines, "        }")
 	}
 
 	// 缩进所有行
@@ -266,26 +218,6 @@ func (g *GinGenerator) generateParameterBinding(method SwaggerMethod) string {
 	}
 
 	return strings.Join(lines, "\n")
-}
-
-// needsCastImport 检查是否需要 cast 导入
-func (g *GinGenerator) needsCastImport() bool {
-	for _, iface := range g.collection.Interfaces {
-		for _, method := range iface.Methods {
-			for _, param := range method.Parameters {
-				if param.Source == "path" || param.Source == "query" {
-					typeName := param.Type.TypeName
-					switch typeName {
-					case "int", "int8", "int16", "int32", "int64",
-						"uint", "uint8", "uint16", "uint32", "uint64",
-						"float32", "float64", "bool":
-						return true
-					}
-				}
-			}
-		}
-	}
-	return false
 }
 
 // generateTypedParamBinding 生成带类型转换的参数绑定
@@ -344,8 +276,11 @@ func (g *GinGenerator) generateQueryParamBinding(param Parameter) string {
 	varName := param.Name
 	typeName := param.Type.FullName
 
-	return fmt.Sprintf(`var %s %s
-        if err := ctx.ShouldBindQuery(&%s); err != nil {`, varName, typeName, varName)
+	s := fmt.Sprintf(`var %s %s
+        if !onGinBind(ctx, &%s, "QUERY") {
+			return
+		}`, varName, typeName, varName)
+	return s
 }
 
 // generateFormParamBinding 生成表单参数绑定
@@ -353,8 +288,11 @@ func (g *GinGenerator) generateFormParamBinding(param Parameter) string {
 	varName := param.Name
 	typeName := param.Type.FullName
 
-	return fmt.Sprintf(`var %s %s
-        if err := ctx.ShouldBind(&%s); err != nil {`, varName, typeName, varName)
+	s := fmt.Sprintf(`var %s %s
+        if !onGinBind(ctx, &%s, "FORM") {
+			return
+		}`, varName, typeName, varName)
+	return s
 }
 
 // generateBodyParamBinding 生成 body 参数绑定
@@ -362,8 +300,11 @@ func (g *GinGenerator) generateBodyParamBinding(param Parameter) string {
 	varName := param.Name
 	typeName := param.Type.FullName
 
-	return fmt.Sprintf(`var %s %s
-        if err := ctx.ShouldBindJSON(&%s); err != nil {`, varName, typeName, varName)
+	s := fmt.Sprintf(`var %s %s
+        if !onGinBind(ctx, &%s, "JSON") {
+			return
+		}`, varName, typeName, varName)
+	return s
 }
 
 // generateHeaderParamBinding 生成头部参数绑定
@@ -507,8 +448,12 @@ func (g *GinGenerator) GenerateComplete(comments map[string]string) string {
 // generateHelperFunctions 生成辅助函数
 func (g *GinGenerator) generateHelperFunctions() string {
 	return `
-// func onGinBindErr(c *gin.Context, err error) {
-//     c.JSON(400, gin.H{"error": err.Error()})
+// func onGinBind(c *gin.Context, val any, typ string) bool {
+//     if err := c.ShouldBind(&val); err != nil {
+// 			c.JSON(400, gin.H{"error": err.Error()})
+// 			return false
+// 		}
+// 		return true
 // }
 // 
 // func onGinResponse[T any](c *gin.Context, data T) {

@@ -84,6 +84,8 @@ func (p *InterfaceParser) ParseFile(filename string) (*InterfaceCollection, erro
 
 	var interfaces []SwaggerInterface
 
+	ps := newTagParser()
+
 	// 遍历文件中的所有声明
 	for _, decl := range file.Decls {
 		genDecl, ok := decl.(*ast.GenDecl)
@@ -111,12 +113,16 @@ func (p *InterfaceParser) ParseFile(filename string) (*InterfaceCollection, erro
 				Methods:     []SwaggerMethod{},
 			}
 
-			// 解析接口注释
+			// 解析接口注释(作为公共注释)
 			if genDecl.Doc != nil {
 				for _, comment := range genDecl.Doc.List {
 					line := strings.TrimSpace(strings.TrimPrefix(comment.Text, "//"))
-					if line != "" {
-						swaggerInterface.Comments = append(swaggerInterface.Comments, line)
+					if strings.HasPrefix(line, "@") {
+						parse, err := ps.Parse(line)
+						if err != nil {
+							panic(err)
+						}
+						swaggerInterface.CommonDef = append(swaggerInterface.CommonDef, parse.(parsers.Definition))
 					}
 				}
 			}
@@ -204,7 +210,7 @@ func (p *InterfaceParser) parseMethodParameters(fileSet *token.FileSet, fileBs [
 	}
 
 	// 提取路径中的变量
-	for _, routerPath := range swaggerMethod.Paths {
+	for _, routerPath := range swaggerMethod.GetPaths() {
 		pathParams := annotationParser.extractPathParameters(routerPath)
 		for _, pathParam := range pathParams {
 			var idx = -1
@@ -222,6 +228,7 @@ func (p *InterfaceParser) parseMethodParameters(fileSet *token.FileSet, fileBs [
 			}
 			if idx != -1 {
 				allParams[idx].PathName = pathParam.Name
+				allParams[idx].Source = "path"
 			} else {
 				panic(fmt.Sprintf("path %s param `%s` was not found in %s \n Use @PARAM(%s) to fix it.", routerPath, pathParam.Name, clean.Replace(text), pathParam.Name))
 			}
