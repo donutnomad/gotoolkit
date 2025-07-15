@@ -213,7 +213,7 @@ func (g *GinGenerator) generateHandlerMethod(iface SwaggerInterface, method Swag
 	handlerMethodName := method.Name
 
 	// 生成参数绑定代码
-	paramBindingCode := g.generateParameterBinding(method)
+	paramBindingCode := g.generateParameterBinding(iface, method)
 
 	// 生成方法调用代码
 	methodCallCode := g.generateMethodCall(method)
@@ -309,7 +309,7 @@ func (a *{{.WrapperName}}) {{.BindMethodName}}(router gin.IRoutes, preHandlers .
 }
 
 // generateParameterBinding 生成参数绑定代码
-func (g *GinGenerator) generateParameterBinding(method SwaggerMethod) string {
+func (g *GinGenerator) generateParameterBinding(iface SwaggerInterface, method SwaggerMethod) string {
 	var lines []string
 
 	for i, param := range method.Parameters {
@@ -331,7 +331,7 @@ func (g *GinGenerator) generateParameterBinding(method SwaggerMethod) string {
 			// 默认的
 			if method.GetHTTPMethod() == "GET" {
 				lines = append(lines, g.generateQueryParamBinding(param))
-			} else if v, _ := method.Def.GetAcceptType(); v == "json" {
+			} else if v, _ := slices.Concat(method.Def, iface.CommonDef).GetAcceptType(); v == "json" {
 				lines = append(lines, g.generateBodyParamBinding(param))
 			} else {
 				lines = append(lines, g.generateFormParamBinding(param))

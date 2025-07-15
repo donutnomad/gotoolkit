@@ -25,7 +25,7 @@ type Parameter struct {
 	PathName string   // 路径中的参数名
 	Alias    string   // 别名
 	Type     TypeInfo // 参数类型
-	Source   string   // path,header
+	Source   string   // path,header,query
 	Required bool     // 是否必需
 	Comment  string   // 参数注释
 }
@@ -40,6 +40,16 @@ type SwaggerMethod struct {
 	Description string // 描述
 
 	Def DefSlice
+}
+
+func CollectDef[T any](input DefSlice) []T {
+	var ret []T
+	for _, item := range input {
+		if v, ok := item.(T); ok {
+			ret = append(ret, v)
+		}
+	}
+	return ret
 }
 
 type DefSlice []parsers.Definition

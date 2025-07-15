@@ -96,6 +96,18 @@ func (g *SwaggerGenerator) generateMethodComments(method SwaggerMethod, iface Sw
 		lines = append(lines, fmt.Sprintf("// @Description %s", method.Description))
 	}
 
+	// MID
+	for _, md := range CollectDef[*parsers.MiddleWare](method.Def) {
+		for _, name := range md.Value {
+			if idx := strings.Index(name, "_"); idx > 0 {
+				prefix := name[:idx]
+				if idx != len(name)-1 {
+					lines = append(lines, fmt.Sprintf("// @Description %s: %s", prefix, name[idx+1:]))
+				}
+			}
+		}
+	}
+
 	// Tags - 应用覆盖和排除逻辑
 	mergeDefs[string](iface.CommonDef, method.Def, func(item parsers.Definition) (string, bool) {
 		v, ok := item.(*parsers.Tag)
@@ -156,7 +168,7 @@ func (g *SwaggerGenerator) generateMethodComments(method SwaggerMethod, iface Sw
 	})
 
 	// Parameters
-	paramLines := g.generateParameterComments(method.Parameters, iface.CommonDef, method.Def)
+	paramLines := g.generateParameterComments(method, method.Parameters, iface.CommonDef, method.Def)
 	lines = append(lines, paramLines...)
 
 	// Success response
@@ -172,14 +184,27 @@ func (g *SwaggerGenerator) generateMethodComments(method SwaggerMethod, iface Sw
 }
 
 // generateParameterComments 生成参数注释
-func (g *SwaggerGenerator) generateParameterComments(parameters []Parameter, ifaceDef, def DefSlice) []string {
+func (g *SwaggerGenerator) generateParameterComments(method SwaggerMethod, parameters []Parameter, ifaceDef, def DefSlice) []string {
 	var lines []string
 
-	for _, param := range parameters {
+	for i, param := range parameters {
 		// 跳过 gin.Context 参数
 		if param.Type.FullName == "*gin.Context" || param.Type.TypeName == "Context" {
 			continue
 		}
+		if param.Source == "path" {
+		} else if param.Source == "header" {
+		} else if i == len(parameters)-1 {
+			// 默认的
+			if method.GetHTTPMethod() == "GET" {
+				param.Source = "query"
+			} else if v, _ := slices.Concat(def, ifaceDef).GetAcceptType(); v == "json" {
+				param.Source = "body"
+			} else {
+				param.Source = "formData"
+			}
+		}
+
 		paramLine := g.generateParameterComment(param)
 		lines = append(lines, paramLine)
 	}
@@ -201,7 +226,7 @@ func (g *SwaggerGenerator) generateParameterComments(parameters []Parameter, ifa
 	}
 	for _, key := range headerNames {
 		value := headerMap[key]
-		headerLine := fmt.Sprintf("// @Param %s header string %s \"%s\"", key, lo.Ternary(value.Required, "true", "false"), value.Description)
+		headerLine := fmt.Sprintf("// @Param %s header string %s \"%s\"", key, lo.Ternary(value.Required, "true", "false"), lo.Ternary(len(value.Description) > 0, value.Description, key))
 		lines = append(lines, headerLine)
 	}
 
