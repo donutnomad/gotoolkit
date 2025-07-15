@@ -16,14 +16,14 @@ type Security struct {
 func (s Security) Name() string    { return "SECURITY" }
 func (s Security) Mode() ParseMode { return ModeNamed }
 
-type HEADER struct {
+type Header struct {
 	Value       string `sg:"required"`
 	Required    bool   `sg:"required"`
 	Description string
 }
 
-func (s HEADER) Name() string    { return "HEADER" }
-func (s HEADER) Mode() ParseMode { return ModePositional }
+func (s Header) Name() string    { return "HEADER" }
+func (s Header) Mode() ParseMode { return ModePositional }
 
 /////////////////////////////// 响应 /////////////////////////////////////
 

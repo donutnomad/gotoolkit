@@ -7,7 +7,7 @@ import (
 
 func TestTag(t *testing.T) {
 	parser := NewParser()
-	err := parser.Register(Tag{}, Security{}, GET{}, HEADER{}, FormReq{})
+	err := parser.Register(Tag{}, Security{}, GET{}, Header{}, FormReq{})
 	if err != nil {
 		panic(err)
 	}

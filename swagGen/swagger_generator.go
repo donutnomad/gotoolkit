@@ -4,6 +4,7 @@ import (
 	"fmt"
 	parsers "github.com/donutnomad/gotoolkit/swagGen/parser"
 	"github.com/samber/lo"
+	"slices"
 	"strings"
 )
 
@@ -18,7 +19,7 @@ func newTagParser() *parsers.Parser {
 
 		parsers.Security{},
 		parsers.Tag{},
-		parsers.HEADER{},
+		parsers.Header{},
 		parsers.MiddleWare{},
 
 		parsers.JsonReq{},
@@ -150,7 +151,7 @@ func (g *SwaggerGenerator) generateMethodComments(method SwaggerMethod, iface Sw
 	})
 
 	// Parameters
-	paramLines := g.generateParameterComments(method.Parameters)
+	paramLines := g.generateParameterComments(method.Parameters, iface.CommonDef, method.Def)
 	lines = append(lines, paramLines...)
 
 	// Success response
@@ -166,7 +167,7 @@ func (g *SwaggerGenerator) generateMethodComments(method SwaggerMethod, iface Sw
 }
 
 // generateParameterComments 生成参数注释
-func (g *SwaggerGenerator) generateParameterComments(parameters []Parameter) []string {
+func (g *SwaggerGenerator) generateParameterComments(parameters []Parameter, ifaceDef, def DefSlice) []string {
 	var lines []string
 
 	for _, param := range parameters {
@@ -174,9 +175,29 @@ func (g *SwaggerGenerator) generateParameterComments(parameters []Parameter) []s
 		if param.Type.FullName == "*gin.Context" || param.Type.TypeName == "Context" {
 			continue
 		}
-
 		paramLine := g.generateParameterComment(param)
 		lines = append(lines, paramLine)
+	}
+
+	// 需要生成header的注释
+	// @Param        X-MyHeader	  header    string    true   	"MyHeader must be set for valid response"
+	// @Param        X-API-VERSION    header    string    true   	"API version eg.: 1.0"
+	var allSlice = slices.Concat(ifaceDef, def)
+	var headerMap = make(map[string]*parsers.Header)
+	var headerNames []string
+	for _, param := range allSlice {
+		if v, ok := param.(*parsers.Header); ok {
+			_, exists := headerMap[v.Value]
+			headerMap[v.Value] = v
+			if !exists {
+				headerNames = append(headerNames, v.Value)
+			}
+		}
+	}
+	for _, key := range headerNames {
+		value := headerMap[key]
+		headerLine := fmt.Sprintf("// @Param %s header string %s \"%s\"", key, lo.Ternary(value.Required, "true", "false"), value.Description)
+		lines = append(lines, headerLine)
 	}
 
 	return lines
