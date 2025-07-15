@@ -132,13 +132,13 @@ func (g *GinGenerator) generateHandlerMethod(iface SwaggerInterface, method Swag
 	var template string
 	if paramBindingCode == "" {
 		template = `
-func (a *{{.WrapperName}}) {{.HandlerMethodName}}(c *gin.Context) {
+func (a *{{.WrapperName}}) {{.HandlerMethodName}}(ctx *gin.Context) {
 {{.MethodCall}}
 }
 `
 	} else {
 		template = `
-func (a *{{.WrapperName}}) {{.HandlerMethodName}}(c *gin.Context) {
+func (a *{{.WrapperName}}) {{.HandlerMethodName}}(ctx *gin.Context) {
 {{.ParameterBinding}}
 {{.MethodCall}}
 }
@@ -253,7 +253,7 @@ func (g *GinGenerator) generateParameterBinding(method SwaggerMethod) string {
 
 	// 添加错误处理
 	if hasError {
-		lines = append(lines, "            onGinBindErr(c, err)")
+		lines = append(lines, "            onGinBindErr(ctx, err)")
 		lines = append(lines, "            return")
 		lines = append(lines, "        }")
 	}
@@ -335,7 +335,7 @@ func (g *GinGenerator) generatePathParamBinding(param Parameter) string {
 	if param.Alias != "" {
 		paramNameInPath = param.Alias
 	}
-	paramValue := fmt.Sprintf(`c.Param("%s")`, paramNameInPath)
+	paramValue := fmt.Sprintf(`ctx.Param("%s")`, paramNameInPath)
 	return g.generateTypedParamBinding(param, paramValue)
 }
 
@@ -345,7 +345,7 @@ func (g *GinGenerator) generateQueryParamBinding(param Parameter) string {
 	typeName := param.Type.FullName
 
 	return fmt.Sprintf(`var %s %s
-        if err := c.ShouldBindQuery(&%s); err != nil {`, varName, typeName, varName)
+        if err := ctx.ShouldBindQuery(&%s); err != nil {`, varName, typeName, varName)
 }
 
 // generateFormParamBinding 生成表单参数绑定
@@ -354,7 +354,7 @@ func (g *GinGenerator) generateFormParamBinding(param Parameter) string {
 	typeName := param.Type.FullName
 
 	return fmt.Sprintf(`var %s %s
-        if err := c.ShouldBind(&%s); err != nil {`, varName, typeName, varName)
+        if err := ctx.ShouldBind(&%s); err != nil {`, varName, typeName, varName)
 }
 
 // generateBodyParamBinding 生成 body 参数绑定
@@ -363,12 +363,12 @@ func (g *GinGenerator) generateBodyParamBinding(param Parameter) string {
 	typeName := param.Type.FullName
 
 	return fmt.Sprintf(`var %s %s
-        if err := c.ShouldBindJSON(&%s); err != nil {`, varName, typeName, varName)
+        if err := ctx.ShouldBindJSON(&%s); err != nil {`, varName, typeName, varName)
 }
 
 // generateHeaderParamBinding 生成头部参数绑定
 func (g *GinGenerator) generateHeaderParamBinding(param Parameter) string {
-	return fmt.Sprintf(`%s := c.GetHeader("%s")`, param.Name, param.Name)
+	return fmt.Sprintf(`%s := ctx.GetHeader("%s")`, param.Name, param.Name)
 }
 
 // generateMethodCall 生成方法调用代码
@@ -378,7 +378,7 @@ func (g *GinGenerator) generateMethodCall(method SwaggerMethod) string {
 	// 添加 context 参数（如果方法需要）
 	needsContext := g.methodNeedsContext(method)
 	if needsContext {
-		args = append(args, "c")
+		args = append(args, "ctx")
 	}
 
 	// 按照接口定义的顺序添加参数
@@ -426,7 +426,7 @@ func (g *GinGenerator) generateResponseHandling(method SwaggerMethod, methodCall
 	// 检查是否是错误类型
 	if g.isErrorType(method.ResponseType) {
 		return fmt.Sprintf(`if err := %s; err != nil {
-            onGinBindErr(c, err)
+            onGinBindErr(ctx, err)
             return
         }
         onGinResponse(c, gin.H{"status": "success"})`, methodCall)
@@ -434,7 +434,7 @@ func (g *GinGenerator) generateResponseHandling(method SwaggerMethod, methodCall
 
 	// 普通返回值 - 使用 result 避免与请求参数 data 冲突
 	return fmt.Sprintf(`var result %s = %s
-        onGinResponse(c, result)`, method.ResponseType.FullName, methodCall)
+        onGinResponse(ctx, result)`, method.ResponseType.FullName, methodCall)
 }
 
 // isErrorType 检查是否是错误类型

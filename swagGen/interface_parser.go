@@ -207,13 +207,23 @@ func (p *InterfaceParser) parseMethodParameters(fileSet *token.FileSet, fileBs [
 	for _, routerPath := range swaggerMethod.Paths {
 		pathParams := annotationParser.extractPathParameters(routerPath)
 		for _, pathParam := range pathParams {
-			_, idx, ok := lo.FindIndexOf(allParams, func(item Parameter) bool {
-				return item.Name == pathParam.Name || (item.Alias != "" && item.Alias == pathParam.Name)
-			})
-			if !ok {
-				panic(fmt.Sprintf("path %s param `%s` was not found in %s \n Use @PARAM(%s) to fix it.", routerPath, pathParam.Name, clean.Replace(text), pathParam.Name))
-			} else {
+			var idx = -1
+			for i := range allParams {
+				item := allParams[i]
+				if item.Name == pathParam.Name || (item.Alias != "" && item.Alias == pathParam.Name) {
+					idx = i
+					break
+				} else if parsers.NewCamelString(pathParam.Name).Equal(item.Name) { // 将request_id这种路径变量名映射到requestID或者requestId这种没有注释的变量中，节省开发注意力消耗
+					allParams[i].Alias = pathParam.Name
+					allParams[i].Source = "path"
+					idx = i
+					break
+				}
+			}
+			if idx != -1 {
 				allParams[idx].PathName = pathParam.Name
+			} else {
+				panic(fmt.Sprintf("path %s param `%s` was not found in %s \n Use @PARAM(%s) to fix it.", routerPath, pathParam.Name, clean.Replace(text), pathParam.Name))
 			}
 		}
 	}
