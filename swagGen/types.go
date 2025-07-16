@@ -54,17 +54,25 @@ func CollectDef[T any](inputs ...DefSlice) []T {
 	return ret
 }
 
-type DefSlice []parsers.Definition
-
-func (s DefSlice) IsRemoved() bool {
-	for _, item := range s {
-		switch item.(type) {
-		case *parsers.Removed:
-			return true
-		default:
+func FindDef[T any](inputs ...DefSlice) bool {
+	for _, input := range inputs {
+		for _, item := range input {
+			if _, ok := item.(T); ok {
+				return true
+			}
 		}
 	}
 	return false
+}
+
+type DefSlice []parsers.Definition
+
+func (s DefSlice) IsRemoved() bool {
+	return FindDef[*parsers.Removed](s)
+}
+
+func (s DefSlice) IsExcludeFromBindAll() bool {
+	return FindDef[*parsers.ExcludeFromBindAll](s)
 }
 
 func (s DefSlice) GetAcceptType() (string, bool) {

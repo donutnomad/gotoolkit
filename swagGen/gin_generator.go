@@ -36,23 +36,13 @@ func (g *GinGenerator) GenerateGinCode(comments map[string]string) (constructCod
 
 	// 为每个接口生成包装结构体和绑定方法
 	for _, iface := range g.collection.Interfaces {
-
 		var middlewareCount int
 		var middlewareMap = make(map[string][]*parsers.MiddleWare)
 		var handlerItfName = fmt.Sprintf("%sHandler", iface.Name)
 
-		//CollectDef[*parsers.MiddleWare](
-		//	lo.Map(iface.Methods, func(item SwaggerMethod, index int) DefSlice {
-		//		return item.Def
-		//	})...,
-		//)
 		for _, method := range iface.Methods {
-			for _, item := range method.Def {
-				if v, ok := item.(*parsers.MiddleWare); ok {
-					middlewareMap[method.Name] = append(middlewareMap[method.Name], v)
-					middlewareCount++
-				}
-			}
+			middlewareMap[method.Name] = CollectDef[*parsers.MiddleWare](iface.CommonDef, method.Def)
+			middlewareCount += len(middlewareMap[method.Name])
 		}
 
 		// 生成包装结构体
@@ -87,6 +77,9 @@ func (g *GinGenerator) GenerateGinCode(comments map[string]string) (constructCod
 		template := fmt.Sprintf("func (a *%s) BindAll(router gin.IRoutes, preHandlers ...gin.HandlerFunc) {", iface.GetWrapperName())
 		parts = append(parts, template)
 		for _, method := range iface.Methods {
+			if method.Def.IsRemoved() || method.Def.IsExcludeFromBindAll() {
+				continue
+			}
 			parts = append(parts, fmt.Sprintf("	a.%s(router, preHandlers...)", fmt.Sprintf("Bind%s", method.Name)))
 		}
 		parts = append(parts, "}")
@@ -251,17 +244,17 @@ func (g *GinGenerator) generateMethodBinding(iface SwaggerInterface, method Swag
 	bindMethodName := fmt.Sprintf("Bind%s", method.Name)
 	handlerMethodName := method.Name
 
-	if method.Def.IsRemoved() {
-		template := `
-func (a *{{.WrapperName}}) {{.BindMethodName}}(router gin.IRoutes, preHandlers ...gin.HandlerFunc) {
-}
-`
-		data := map[string]interface{}{
-			"WrapperName":    wrapperName,
-			"BindMethodName": bindMethodName,
-		}
-		return strings.TrimSpace(utils.MustExecuteTemplate(data, template))
-	}
+	//	if method.Def.IsRemoved() || method.Def.IsExcludeFromBindAll() {
+	//		template := `
+	//func (a *{{.WrapperName}}) {{.BindMethodName}}(router gin.IRoutes, preHandlers ...gin.HandlerFunc) {
+	//}
+	//`
+	//		data := map[string]interface{}{
+	//			"WrapperName":    wrapperName,
+	//			"BindMethodName": bindMethodName,
+	//		}
+	//		return strings.TrimSpace(utils.MustExecuteTemplate(data, template))
+	//	}
 
 	// 转换路径格式：{param} -> :param
 	ginPaths := lo.Map(method.GetPaths(), func(item string, index int) string {
@@ -285,9 +278,9 @@ func (a *{{.WrapperName}}) {{.BindMethodName}}(router gin.IRoutes, preHandlers .
 		data := map[string]interface{}{
 			"WrapperName":    wrapperName,
 			"BindMethodName": bindMethodName,
-			"Handlers": lo.Flatten(lo.Map(middlewares, func(item *parsers.MiddleWare, index int) []string {
+			"Handlers": lo.Uniq(lo.Flatten(lo.Map(middlewares, func(item *parsers.MiddleWare, index int) []string {
 				return item.Value
-			})),
+			}))),
 			"HTTPMethod":        method.GetHTTPMethod(),
 			"GinPath":           ginPaths,
 			"HandlerMethodName": handlerMethodName,

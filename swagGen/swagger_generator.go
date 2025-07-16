@@ -30,6 +30,7 @@ func newTagParser() *parsers.Parser {
 		parsers.MIME{},
 
 		parsers.Removed{},
+		parsers.ExcludeFromBindAll{},
 	)
 	if err != nil {
 		panic(err)

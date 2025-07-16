@@ -123,3 +123,9 @@ type Removed struct{}
 
 func (s Removed) Name() string    { return "Removed" }
 func (s Removed) Mode() ParseMode { return ModePositional }
+
+type ExcludeFromBindAll struct {
+}
+
+func (s ExcludeFromBindAll) Name() string    { return "ExcludeFromBindAll" }
+func (s ExcludeFromBindAll) Mode() ParseMode { return ModePositional }
