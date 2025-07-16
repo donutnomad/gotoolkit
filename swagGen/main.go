@@ -284,15 +284,46 @@ func printUsage() {
   %s -path ./api -package myapi -v
 
 支持的注释:
-  @POST(/api/v1/user/{id})  - HTTP 方法和路径
-  @FORM                     - 表单数据
-  @JSON                     - JSON 数据
-  @MULTIPART               - 文件上传
-  @MIME(application/json)   - 自定义 MIME 类型
-  @PARAM                     - 路径参数
-  @QUERY                    - 查询参数
-  @BODY                     - 请求体参数
-  @HEADER                   - 头部参数
+
+  路由注释:
+    @GET(/api/v1/user/{id})    - GET 请求
+    @POST(/api/v1/user)        - POST 请求
+    @PUT(/api/v1/user/{id})    - PUT 请求
+    @PATCH(/api/v1/user/{id})  - PATCH 请求
+    @DELETE(/api/v1/user/{id}) - DELETE 请求
+
+  参数注释:
+    @PARAM                     - 路径参数（自动推断）
+    @PARAM(alias)              - 带别名的路径参数
+    @QUERY                     - 查询参数
+    @HEADER                    - 头部参数
+    @BODY                      - 请求体参数
+    @FORM                      - 表单参数
+
+  请求内容类型:
+    @JSON-REQ                  - JSON 请求
+    @FORM-REQ                  - 表单请求
+    @MIME-REQ(content-type)    - 自定义请求类型
+
+  响应内容类型:
+    @JSON                      - JSON 响应
+    @MIME(content-type)        - 自定义响应类型
+
+  接口级别注释:
+    @TAG(tag1,tag2)            - 为所有方法添加标签
+    @SECURITY(auth)            - 为所有方法添加安全认证
+    @HEADER(X-Token,true,"说明") - 为所有方法添加头部参数
+
+  中间件注释:
+    @MID(auth,log)             - 为方法添加中间件
+
+  控制注释:
+    @Removed                   - 移除方法（不生成代码）
+    @ExcludeFromBindAll        - 排除在 BindAll 方法之外
+
+  排除语法:
+    @TAG(Company;exclude="StartTransfer")     - 为所有方法添加标签，但排除 StartTransfer
+    @SECURITY(ApiKeyAuth;exclude="method1,method2") - 为所有方法添加安全认证，但排除指定方法
 
 `, os.Args[0], os.Args[0], os.Args[0], os.Args[0])
 }
