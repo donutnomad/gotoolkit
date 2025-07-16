@@ -3,11 +3,11 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/donutnomad/gotoolkit/swagGen/gofmt"
 	parsers "github.com/donutnomad/gotoolkit/swagGen/parser"
 	"go/parser"
 	"go/token"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -118,14 +118,14 @@ func run() error {
 		}
 	}
 
-	// 写入文件
-	if err := os.WriteFile(outputPath, []byte(output), 0644); err != nil {
-		return fmt.Errorf("写入文件失败: %v", err)
+	bytes, err := gofmt.FormatBytes([]byte(output))
+	if err != nil {
+		panic(err)
 	}
 
-	// 格式化代码
-	if err := formatGoFile(outputPath); err != nil {
-		fmt.Printf("警告: 格式化代码失败: %v\n", err)
+	// 写入文件
+	if err := os.WriteFile(outputPath, bytes, 0644); err != nil {
+		return fmt.Errorf("写入文件失败: %v", err)
 	}
 
 	fmt.Printf("成功生成文件: %s\n", outputPath)
@@ -258,12 +258,6 @@ func getPackagePathFromDir(path string) string {
 	}
 
 	return absPath
-}
-
-// formatGoFile 使用 gofmt 格式化 Go 文件
-func formatGoFile(filename string) error {
-	cmd := exec.Command("gofmt", "-w", filename)
-	return cmd.Run()
 }
 
 // printUsage 打印使用说明
