@@ -78,7 +78,7 @@ func (p *AnnotationParser) ParseMethodAnnotations(method *ast.FuncDecl) (*Swagge
 		swaggerMethod.Summary = strings.TrimSpace(strings.TrimPrefix(strings.Join(summaryLines, " "), swaggerMethod.Name))
 	}
 	if len(descriptionLines) > 0 {
-		swaggerMethod.Description = strings.Join(descriptionLines, " ")
+		swaggerMethod.Description = strings.Join(descriptionLines, "\n")
 	}
 
 	// 如果没有找到任何 Swagger 注释，返回 nil

@@ -95,7 +95,9 @@ func (g *SwaggerGenerator) generateMethodComments(method SwaggerMethod, iface Sw
 
 	// Description
 	if method.Description != "" {
-		lines = append(lines, fmt.Sprintf("// @Description %s", method.Description))
+		for _, desc := range strings.Split(method.Description, "\n") {
+			lines = append(lines, fmt.Sprintf("// @Description %s", desc))
+		}
 	}
 
 	// MID
