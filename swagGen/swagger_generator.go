@@ -24,6 +24,7 @@ func newTagParser() *parsers.Parser {
 
 		parsers.JsonReq{},
 		parsers.FormReq{},
+		parsers.MimeReq{},
 
 		parsers.JSON{},
 		parsers.MIME{},

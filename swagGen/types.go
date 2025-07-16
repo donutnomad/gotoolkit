@@ -42,11 +42,13 @@ type SwaggerMethod struct {
 	Def DefSlice
 }
 
-func CollectDef[T any](input DefSlice) []T {
+func CollectDef[T any](inputs ...DefSlice) []T {
 	var ret []T
-	for _, item := range input {
-		if v, ok := item.(T); ok {
-			ret = append(ret, v)
+	for _, input := range inputs {
+		for _, item := range input {
+			if v, ok := item.(T); ok {
+				ret = append(ret, v)
+			}
 		}
 	}
 	return ret
@@ -67,11 +69,13 @@ func (s DefSlice) IsRemoved() bool {
 
 func (s DefSlice) GetAcceptType() (string, bool) {
 	for _, item := range s {
-		switch item.(type) {
+		switch v := item.(type) {
 		case *parsers.FormReq:
 			return "x-www-form-urlencoded", true
 		case *parsers.JsonReq:
 			return "json", true
+		case *parsers.MimeReq:
+			return v.Value, true
 		default:
 		}
 	}

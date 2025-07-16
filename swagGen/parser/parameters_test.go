@@ -84,4 +84,16 @@ func TestParseParameters(t *testing.T) {
 	if err5 != nil {
 		fmt.Printf("预期内的解析错误: %v\n", err5)
 	}
+
+	fmt.Println("测试用例6")
+	input6 := "(ctx *gin.Context, name, filename string, age int)"
+	params1, err1 := ParseParameters(input6)
+	if err1 != nil {
+		t.Fatal(err)
+	} else {
+		fmt.Println("解析结果1:")
+		for _, p := range params1 {
+			fmt.Printf("  - Name: %s, Type: %s, Tag: '%s'\n", p.Name, p.Type, p.Tag)
+		}
+	}
 }

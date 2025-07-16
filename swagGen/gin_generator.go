@@ -37,21 +37,20 @@ func (g *GinGenerator) GenerateGinCode(comments map[string]string) (constructCod
 	// 为每个接口生成包装结构体和绑定方法
 	for _, iface := range g.collection.Interfaces {
 
-		var handlerItf = make(map[string]struct{})
 		var middlewareCount int
 		var middlewareMap = make(map[string][]*parsers.MiddleWare)
 		var handlerItfName = fmt.Sprintf("%sHandler", iface.Name)
 
+		//CollectDef[*parsers.MiddleWare](
+		//	lo.Map(iface.Methods, func(item SwaggerMethod, index int) DefSlice {
+		//		return item.Def
+		//	})...,
+		//)
 		for _, method := range iface.Methods {
 			for _, item := range method.Def {
 				if v, ok := item.(*parsers.MiddleWare); ok {
 					middlewareMap[method.Name] = append(middlewareMap[method.Name], v)
 					middlewareCount++
-					for _, val := range v.Value {
-						if _, exists := handlerItf[val]; !exists {
-							handlerItf[val] = struct{}{}
-						}
-					}
 				}
 			}
 		}
@@ -93,10 +92,14 @@ func (g *GinGenerator) GenerateGinCode(comments map[string]string) (constructCod
 		parts = append(parts, "}")
 		parts = append(parts, "") // 接口之间空行分隔
 
-		if len(handlerItf) > 0 {
-			handlerInterface = append(handlerInterface, fmt.Sprintf("type %s interface {", handlerItfName))
-			items := maps.Keys(handlerItf)
+		// 生成Auth的接口定义
+		if len(middlewareMap) > 0 {
+			var items = lo.Uniq(lo.Flatten(lo.Map(lo.Flatten(maps.Values(middlewareMap)), func(item *parsers.MiddleWare, index int) []string {
+				return item.Value
+			})))
 			sort.Strings(items)
+
+			handlerInterface = append(handlerInterface, fmt.Sprintf("type %s interface {", handlerItfName))
 			for _, key := range items {
 				handlerInterface = append(handlerInterface, fmt.Sprintf("%s() gin.HandlerFunc", key))
 			}

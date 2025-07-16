@@ -17,10 +17,34 @@ func (p Parameter) FullName() string {
 	return fmt.Sprintf("%s %s", p.Name, p.Type)
 }
 
+// splitTopLevel 在顶层按逗号分割参数字符串。
+// 它能正确处理嵌套结构，如 "m map[string, int]"，不会在内部逗号处错误分割。
+func splitTopLevel(input string) []string {
+	var result []string
+	var parenLevel int // 用于跟踪括号、方括号等的嵌套层级
+	lastSplit := 0
+
+	for i, r := range input {
+		switch r {
+		case '(', '[', '{':
+			parenLevel++
+		case ')', ']', '}':
+			parenLevel--
+		case ',':
+			// 只在非嵌套的顶层进行分割
+			if parenLevel == 0 {
+				result = append(result, strings.TrimSpace(input[lastSplit:i]))
+				lastSplit = i + 1
+			}
+		}
+	}
+	// 添加最后一个参数
+	result = append(result, strings.TrimSpace(input[lastSplit:]))
+	return result
+}
+
 // ParseParameters 解析函数参数定义字符串
-// 输入示例: ( c *gin.Context, // @PARAM id string, // @FORM data SendOTPReq, )
-// ParseParameters 解析函数参数定义字符串
-// 支持 // TAG name type 和 /* TAG */ name type 两种格式
+// 支持 // TAG name type, /* TAG */ name type, 以及 name, anotherName type 等格式
 func ParseParameters(rawInput string) ([]Parameter, error) {
 	// 1. 预处理输入字符串
 	content := strings.TrimSpace(rawInput)
@@ -32,67 +56,108 @@ func ParseParameters(rawInput string) ([]Parameter, error) {
 		return []Parameter{}, nil // 处理空参数列表 "()"
 	}
 
-	// 2. 按逗号分割成独立的参数定义
-	paramDefs := strings.Split(content, ",")
+	// 2. 使用智能方式按逗号分割
+	paramDefs := splitTopLevel(content)
 
 	var result []Parameter
+	var nameAccumulator []string // 【核心改动】用于累积等待类型的参数名
+	var accumulatedTag string    // 【核心改动】用于存储累积参数组的标签
 
-	// 3. 遍历并解析每一个参数定义
+	// 3. 遍历并解析每一个参数片段
 	for _, part := range paramDefs {
 		part = strings.TrimSpace(part)
 		if part == "" {
-			continue // 跳过由连续逗号产生的空部分
+			continue
 		}
 
-		var currentParam Parameter
-		var definitionPart string // 用来存放 "name type" 这部分
+		var currentTag string
+		var definitionPart string
 
-		// 4. 检查注释类型 (if-else if-else 结构)
+		// 4. 检查并分离注释
 		if strings.HasPrefix(part, "/*") {
-			// --- 处理块注释: /* TAG */ name type ---
 			endCommentIndex := strings.Index(part, "*/")
 			if endCommentIndex == -1 {
 				return nil, fmt.Errorf("解析错误：在 '%s' 中找到未闭合的块注释 '/*'", part)
 			}
-			// 提取注释标签，并去除前后空格
-			currentParam.Tag = strings.TrimSpace(part[2:endCommentIndex])
-			// 提取参数定义部分
+			currentTag = strings.TrimSpace(part[2:endCommentIndex])
 			definitionPart = strings.TrimSpace(part[endCommentIndex+2:])
-
 		} else if strings.HasPrefix(part, "//") {
-			// --- 处理行注释: // TAG name type ---
 			commentContent := strings.TrimSpace(strings.TrimPrefix(part, "//"))
-			fields := strings.Fields(commentContent) // 使用 Fields 处理多种空白符
-			if len(fields) < 3 {
-				return nil, fmt.Errorf("解析错误：行注释格式不正确，应为 '// TAG name type'，实际为 '%s'", part)
+			fields := strings.Fields(commentContent)
+			if len(fields) >= 2 { // 至少要有 TAG 和 name/type
+				currentTag = fields[0]
+				definitionPart = strings.Join(fields[1:], " ")
+			} else {
+				definitionPart = part // 格式不符的注释，视为普通定义
 			}
-			currentParam.Tag = fields[0]
-			definitionPart = strings.Join(fields[1:], " ")
-
 		} else {
-			// --- 处理无注释: name type ---
-			currentParam.Tag = "" // 没有标签
+			currentTag = ""
 			definitionPart = part
 		}
 
-		// 5. 从 "name type" 中分离出 name 和 type (公共逻辑)
+		// 如果只有注释，没有定义，则将标签暂存，可能会用于下一个参数
 		if definitionPart == "" {
-			// 这种情况可能发生在 "/* @TAG */," 之后，注释后没有参数
-			return nil, fmt.Errorf("解析错误：在 '%s' 中注释标签后缺少参数定义", part)
+			if len(nameAccumulator) == 0 {
+				accumulatedTag = currentTag
+			}
+			continue
 		}
 
-		spaceIndex := strings.Index(definitionPart, " ")
-		if spaceIndex == -1 {
-			return nil, fmt.Errorf("解析错误：在 '%s' 中无法分离参数名和类型，应为 'name type' 格式", definitionPart)
-		}
+		// 5. 【核心逻辑】判断当前片段是否包含类型
+		if !strings.Contains(definitionPart, " ") {
+			// 情况A: 当前片段只是一个名字 (e.g., "a" from "a, b, c string")
+			nameAccumulator = append(nameAccumulator, definitionPart)
+			// 如果这是累积的第一个名字，它的标签就是整个组的标签
+			if len(nameAccumulator) == 1 {
+				accumulatedTag = currentTag
+			}
+		} else {
+			// 情况B: 当前片段包含类型 (e.g., "c string" or "ctx *gin.Context")
+			lastSpaceIndex := strings.LastIndex(definitionPart, " ")
 
-		currentParam.Name = definitionPart[:spaceIndex]
-		currentParam.Type = strings.TrimSpace(definitionPart[spaceIndex:])
+			paramType := strings.TrimSpace(definitionPart[lastSpaceIndex+1:])
+			namesPart := strings.TrimSpace(definitionPart[:lastSpaceIndex])
 
-		// 避免添加空的参数（虽然前面的检查应该已经覆盖了）
-		if currentParam.Name != "" && currentParam.Type != "" {
-			result = append(result, currentParam)
+			// 将当前片段的名字也加入累加器
+			if namesPart != "" {
+				currentNames := strings.Split(namesPart, ",")
+				for _, n := range currentNames {
+					nameAccumulator = append(nameAccumulator, strings.TrimSpace(n))
+				}
+			}
+
+			if len(nameAccumulator) == 0 {
+				return nil, fmt.Errorf("解析错误：在 '%s' 中找到类型 '%s' 但没有对应的参数名", part, paramType)
+			}
+
+			// 优先使用当前片段的标签，否则使用累积的标签
+			finalTag := currentTag
+			if finalTag == "" {
+				finalTag = accumulatedTag
+			}
+
+			// 为所有累积的名字创建 Parameter 对象
+			for _, name := range nameAccumulator {
+				if name == "" {
+					continue
+				}
+				p := Parameter{
+					Name: name,
+					Type: paramType,
+					Tag:  finalTag,
+				}
+				result = append(result, p)
+			}
+
+			// 清空累加器，为下一组参数做准备
+			nameAccumulator = []string{}
+			accumulatedTag = ""
 		}
+	}
+
+	// 6. 检查是否有悬空的参数名（只有名字没有类型）
+	if len(nameAccumulator) > 0 {
+		return nil, fmt.Errorf("解析错误：参数 '%s' 缺少类型定义", strings.Join(nameAccumulator, ", "))
 	}
 
 	return result, nil

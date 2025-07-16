@@ -66,6 +66,13 @@ type JsonReq struct{}
 func (s JsonReq) Name() string    { return "JSON-REQ" }
 func (s JsonReq) Mode() ParseMode { return ModePositional }
 
+type MimeReq struct {
+	Value string `sg:"required"`
+}
+
+func (s MimeReq) Name() string    { return "MIME-REQ" }
+func (s MimeReq) Mode() ParseMode { return ModePositional }
+
 /////////////////////////////// GIN-Handler /////////////////////////////////////
 
 type MiddleWare struct {
