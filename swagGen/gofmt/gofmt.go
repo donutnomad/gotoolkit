@@ -6,7 +6,6 @@ package gofmt
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -16,15 +15,13 @@ import (
 	"golang.org/x/sync/semaphore"
 	"io"
 	"io/fs"
-	"os"
 )
 
+// 格式化配置
 var (
-	// main operation modes
-	list        = flag.Bool("l", false, "list files whose formatting differs from gofmt's")
-	rewriteRule = flag.String("r", "", "rewrite rule (e.g., 'a[b:len(a)] -> a[b:]')")
-	simplifyAST = flag.Bool("s", false, "simplify code")
-	allErrors   = flag.Bool("e", false, "report all errors (not just the first 10 on different lines)")
+	allErrors   = false // 报告所有错误
+	rewriteRule = ""    // 重写规则
+	simplifyAST = false // 简化代码
 )
 
 // Keep these in sync with go/format/format.go.
@@ -44,19 +41,14 @@ var (
 	parserMode parser.Mode
 )
 
-func usage() {
-	fmt.Fprintf(os.Stderr, "usage: gofmt [flags] [path ...]\n")
-	flag.PrintDefaults()
-}
-
 func initParserMode() {
 	parserMode = parser.ParseComments
-	if *allErrors {
+	if allErrors {
 		parserMode |= parser.AllErrors
 	}
 	// It's only -r that makes use of go/ast's object resolution,
 	// so avoid the unnecessary work if the flag isn't used.
-	if *rewriteRule == "" {
+	if rewriteRule == "" {
 		parserMode |= parser.SkipObjectResolution
 	}
 }
@@ -213,7 +205,7 @@ func processFile(src []byte, info fs.FileInfo) ([]byte, error) {
 
 	ast.SortImports(fileSet, file)
 
-	if *simplifyAST {
+	if simplifyAST {
 		simplify(file)
 	}
 
@@ -226,14 +218,7 @@ func processFile(src []byte, info fs.FileInfo) ([]byte, error) {
 }
 
 func FormatBytes(src []byte) ([]byte, error) {
-	// call gofmtMain in a separate function
-	// so that it can use defer and have them
-	// run before the exit.
-	flag.Usage = usage
-	flag.Parse()
-
 	initParserMode()
 	initRewrite()
-
 	return processFile(src, nil)
 }
