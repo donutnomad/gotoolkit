@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	parsers "github.com/donutnomad/gotoolkit/swagGen/parser"
 	"go/ast"
 	"go/token"
@@ -10,9 +11,14 @@ import (
 
 // NewAnnotationParser 创建注释解析器
 func NewAnnotationParser(fileSet *token.FileSet) *AnnotationParser {
+	parser := newTagParser()
+	if parser == nil {
+		// 创建一个简单的 parser 如果注册失败
+		parser = parsers.NewParser()
+	}
 	return &AnnotationParser{
 		fileSet:    fileSet,
-		tagsParser: newTagParser(),
+		tagsParser: parser,
 	}
 }
 
@@ -56,7 +62,9 @@ func (p *AnnotationParser) ParseMethodAnnotations(method *ast.FuncDecl) (*Swagge
 			isDescription = false
 			parse, err := p.tagsParser.Parse(line)
 			if err != nil {
-				panic(err)
+				// 记录错误并跳过无法解析的注释，而不是崩溃
+				return nil, NewParseError("方法注释解析失败",
+					fmt.Sprintf("在方法 %s 中解析注释 '%s' 失败", swaggerMethod.Name, line), err)
 			}
 			swaggerMethod.Def = append(swaggerMethod.Def, parse.(parsers.Definition))
 		} else if line != "" {

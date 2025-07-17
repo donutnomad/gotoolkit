@@ -526,6 +526,9 @@ func (g *GinGenerator) GenerateComplete(comments map[string]string) string {
 	// 生成辅助函数
 	helperFunctions := g.generateHelperFunctions()
 	if helperFunctions != "" {
+		helperFunctions = strings.Join(lo.Map(strings.Split(helperFunctions, "\n"), func(item string, _ int) string {
+			return "//" + item
+		}), "\n")
 		parts = append(parts, helperFunctions)
 	}
 
@@ -535,15 +538,37 @@ func (g *GinGenerator) GenerateComplete(comments map[string]string) string {
 // generateHelperFunctions 生成辅助函数
 func (g *GinGenerator) generateHelperFunctions() string {
 	return `
-// func onGinBind(c *gin.Context, val any, typ string) bool {
-//     if err := c.ShouldBind(&val); err != nil {
-// 			c.JSON(400, gin.H{"error": err.Error()})
-// 			return false
-// 		}
-// 		return true
-// }
-// 
-// func onGinResponse[T any](c *gin.Context, data T) {
-//     c.JSON(200, data)
-// }`
+func onGinBind(c *gin.Context, val any, typ string) bool {
+    switch typ {
+    case "JSON":
+        if err := c.ShouldBindJSON(val); err != nil {
+            c.JSON(400, gin.H{"error": err.Error()})
+            return false
+        }
+    case "FORM":
+        if err := c.ShouldBind(val); err != nil {
+            c.JSON(400, gin.H{"error": err.Error()})
+            return false
+        }
+    case "QUERY":
+        if err := c.ShouldBindQuery(val); err != nil {
+            c.JSON(400, gin.H{"error": err.Error()})
+            return false
+        }
+    default:
+        if err := c.ShouldBind(val); err != nil {
+            c.JSON(400, gin.H{"error": err.Error()})
+            return false
+        }
+    }
+    return true
+}
+
+func onGinResponse[T any](c *gin.Context, data T) {
+    c.JSON(200, data)
+}
+
+func onGinBindErr(c *gin.Context, err error) {
+    c.JSON(500, gin.H{"error": err.Error()})
+}`
 }

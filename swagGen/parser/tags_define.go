@@ -119,6 +119,36 @@ type DELETE struct {
 func (s DELETE) Name() string    { return "DELETE" }
 func (s DELETE) Mode() ParseMode { return ModePositional }
 
+/////////////////////// 参数注释标签 ///////////////////////
+
+// FORM 表单参数标签
+type FORM struct{}
+
+func (s FORM) Name() string    { return "FORM" }
+func (s FORM) Mode() ParseMode { return ModePositional }
+
+// BODY 请求体参数标签
+type BODY struct{}
+
+func (s BODY) Name() string    { return "BODY" }
+func (s BODY) Mode() ParseMode { return ModePositional }
+
+// PARAM 路径参数标签
+type PARAM struct {
+	Value string // 可选的别名
+}
+
+func (s PARAM) Name() string    { return "PARAM" }
+func (s PARAM) Mode() ParseMode { return ModePositional }
+
+// QUERY 查询参数标签
+type QUERY struct{}
+
+func (s QUERY) Name() string    { return "QUERY" }
+func (s QUERY) Mode() ParseMode { return ModePositional }
+
+/////////////////////// 控制标签 ///////////////////////
+
 type Removed struct{}
 
 func (s Removed) Name() string    { return "Removed" }

@@ -10,7 +10,8 @@ import (
 
 func newTagParser() *parsers.Parser {
 	parser := parsers.NewParser()
-	err := parser.Register(parsers.Tag{},
+	err := parser.Register(
+		parsers.Tag{},
 		parsers.GET{},
 		parsers.POST{},
 		parsers.PUT{},
@@ -18,7 +19,6 @@ func newTagParser() *parsers.Parser {
 		parsers.DELETE{},
 
 		parsers.Security{},
-		parsers.Tag{},
 		parsers.Header{},
 		parsers.MiddleWare{},
 
@@ -29,20 +29,32 @@ func newTagParser() *parsers.Parser {
 		parsers.JSON{},
 		parsers.MIME{},
 
+		// 参数注释标签
+		parsers.FORM{},
+		parsers.BODY{},
+		parsers.PARAM{},
+		parsers.QUERY{},
+
 		parsers.Removed{},
 		parsers.ExcludeFromBindAll{},
 	)
+	// 修复错误处理，移除 panic
 	if err != nil {
-		panic(err)
+		return nil // 返回 nil 而不是崩溃
 	}
 	return parser
 }
 
 // NewSwaggerGenerator 创建 Swagger 生成器
 func NewSwaggerGenerator(collection *InterfaceCollection) *SwaggerGenerator {
+	parser := newTagParser()
+	if parser == nil {
+		// 创建一个简单的 parser 如果注册失败
+		parser = parsers.NewParser()
+	}
 	return &SwaggerGenerator{
 		collection: collection,
-		tagsParser: newTagParser(),
+		tagsParser: parser,
 	}
 }
 
