@@ -309,7 +309,7 @@ func (g *GinGenerator) generateParameterBinding(iface SwaggerInterface, method S
 	var lines []string
 
 	for i, param := range method.Parameters {
-		if param.Type.FullName == "*gin.Context" ||
+		if param.Type.FullName == GinContextType ||
 			param.Type.TypeName == "Context" ||
 			strings.Contains(param.Type.FullName, "context.Context") {
 			continue
@@ -450,7 +450,7 @@ func (g *GinGenerator) generateMethodCall(method SwaggerMethod) string {
 	// 按照接口定义的顺序添加参数
 	for _, param := range method.Parameters {
 		// 跳过 gin.Context 和 context.Context 参数
-		if param.Type.FullName == "*gin.Context" ||
+		if param.Type.FullName == GinContextType ||
 			param.Type.TypeName == "Context" ||
 			strings.Contains(param.Type.FullName, "context.Context") {
 			continue
@@ -471,7 +471,7 @@ func (g *GinGenerator) generateMethodCall(method SwaggerMethod) string {
 func (g *GinGenerator) methodNeedsContext(method SwaggerMethod) bool {
 	// 检查原始接口方法是否有 context 参数
 	for _, param := range method.Parameters {
-		if param.Type.FullName == "*gin.Context" ||
+		if param.Type.FullName == GinContextType ||
 			param.Type.TypeName == "Context" ||
 			strings.Contains(param.Type.FullName, "context.Context") {
 			return true

@@ -116,7 +116,10 @@ func (p *InterfaceParser) ParseFile(filename string) (*InterfaceCollection, erro
 // 遍历文件中的所有声明，找到接口类型并解析其方法
 func (p *InterfaceParser) parseInterfaceDeclarations(file *ast.File, fileBs []byte, fileSet *token.FileSet, packagePath string, imports xast.ImportInfoSlice, annotationParser *AnnotationParser, typeParser *ReturnTypeParser) ([]SwaggerInterface, error) {
 	var interfaces []SwaggerInterface
-	ps := newTagParser()
+	ps, err := newTagParserSafe()
+	if err != nil {
+		return nil, err
+	}
 
 	// 遍历文件中的所有声明
 	for _, decl := range file.Decls {

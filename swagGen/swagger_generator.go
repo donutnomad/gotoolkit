@@ -8,49 +8,11 @@ import (
 	"strings"
 )
 
-func newTagParser() *parsers.Parser {
-	parser := parsers.NewParser()
-	err := parser.Register(
-		parsers.Tag{},
-		parsers.GET{},
-		parsers.POST{},
-		parsers.PUT{},
-		parsers.PATCH{},
-		parsers.DELETE{},
-
-		parsers.Security{},
-		parsers.Header{},
-		parsers.MiddleWare{},
-
-		parsers.JsonReq{},
-		parsers.FormReq{},
-		parsers.MimeReq{},
-
-		parsers.JSON{},
-		parsers.MIME{},
-
-		// 参数注释标签
-		parsers.FORM{},
-		parsers.BODY{},
-		parsers.PARAM{},
-		parsers.QUERY{},
-
-		parsers.Removed{},
-		parsers.ExcludeFromBindAll{},
-	)
-	// 修复错误处理，移除 panic
-	if err != nil {
-		return nil // 返回 nil 而不是崩溃
-	}
-	return parser
-}
-
 // NewSwaggerGenerator 创建 Swagger 生成器
 func NewSwaggerGenerator(collection *InterfaceCollection) *SwaggerGenerator {
-	parser := newTagParser()
-	if parser == nil {
-		// 创建一个简单的 parser 如果注册失败
-		parser = parsers.NewParser()
+	parser, err := newTagParserSafe()
+	if err != nil {
+		panic(err)
 	}
 	return &SwaggerGenerator{
 		collection: collection,
@@ -205,7 +167,7 @@ func (g *SwaggerGenerator) generateParameterComments(method SwaggerMethod, param
 
 	for i, param := range parameters {
 		// 跳过 gin.Context 参数
-		if param.Type.FullName == "*gin.Context" || param.Type.TypeName == "Context" {
+		if param.Type.FullName == GinContextType || param.Type.TypeName == "Context" {
 			continue
 		}
 		if param.Source == "path" {
