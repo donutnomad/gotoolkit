@@ -52,7 +52,7 @@ func (p *Parser) Register(defs ...Definition) error {
 			t = t.Elem()
 		}
 		if t.Kind() != reflect.Struct {
-			return fmt.Errorf("注册失败: %v 不是一个结构体", t)
+			return fmt.Errorf("registration failed: %v is not a struct", t)
 		}
 		p.definitions[def.Name()] = definitionInfo{
 			Type: t,
@@ -67,7 +67,7 @@ func (p *Parser) Parse(line string) (any, error) {
 	line = strings.TrimSpace(line)
 	tagLine := strings.TrimSpace(strings.TrimPrefix(line, "//"))
 	if !strings.HasPrefix(tagLine, "@") {
-		return nil, fmt.Errorf("标签格式错误: 必须以 '@' 开始")
+		return nil, fmt.Errorf("tag format error: must start with '@'")
 	}
 
 	var (
@@ -88,7 +88,7 @@ func (p *Parser) Parse(line string) (any, error) {
 	} else {
 		// 有括号格式: @TAG-NAME(content) 自由文本
 		if !strings.HasSuffix(tagLine, ")") {
-			return nil, fmt.Errorf("标签格式错误: 找到开括号 '(' 但结尾没有匹配的 ')'")
+			return nil, fmt.Errorf("tag format error: found opening parenthesis '(' but no matching ')' at the end")
 		}
 
 		// 提取标签名和括号内容
@@ -106,7 +106,7 @@ func (p *Parser) Parse(line string) (any, error) {
 
 	info, ok := p.definitions[tagName]
 	if !ok {
-		return nil, fmt.Errorf("未注册的标签: %s", tagName)
+		return nil, fmt.Errorf("unregistered tag: %s", tagName)
 	}
 
 	newStructPtr := reflect.New(info.Type)
@@ -119,14 +119,14 @@ func (p *Parser) Parse(line string) (any, error) {
 	case ModePositional:
 		err = p.fillStructFromPositional(newStructElem, content)
 	default:
-		err = fmt.Errorf("未知的解析模式")
+		err = fmt.Errorf("unknown parsing mode")
 	}
 
 	if err != nil {
-		return nil, fmt.Errorf("填充结构体失败 (标签: %s): %w", tagName, err)
+		return nil, fmt.Errorf("failed to fill struct (tag: %s): %w", tagName, err)
 	}
 	if err := p.validateStruct(newStructElem); err != nil {
-		return nil, fmt.Errorf("验证失败 (标签: %s): %w", tagName, err)
+		return nil, fmt.Errorf("validation failed (tag: %s): %w", tagName, err)
 	}
 
 	return newStructPtr.Interface(), nil
@@ -151,7 +151,7 @@ func (p *Parser) fillStructFromNamed(structElem reflect.Value, content string) e
 		}
 		keyValue := strings.SplitN(part, "=", 2)
 		if len(keyValue) != 2 {
-			return fmt.Errorf("无效的具名参数格式: '%s'", part)
+			return fmt.Errorf("invalid named parameter format: '%s'", part)
 		}
 		key := strings.ToLower(strings.TrimSpace(keyValue[0]))
 		value := strings.TrimSpace(keyValue[1])
@@ -172,7 +172,7 @@ func (p *Parser) fillStructFromNamed(structElem reflect.Value, content string) e
 			continue
 		}
 		if err := setFieldFromString(field, fieldType, argValue); err != nil {
-			return fmt.Errorf("设置字段 '%s' 出错: %w", fieldType.Name, err)
+			return fmt.Errorf("error setting field '%s': %w", fieldType.Name, err)
 		}
 	}
 	return nil
@@ -189,7 +189,7 @@ func (p *Parser) fillStructFromPositional(structElem reflect.Value, content stri
 	}
 
 	if len(parts) > structElem.NumField() {
-		return fmt.Errorf("提供了 %d 个参数, 但结构体只有 %d 个字段", len(parts), structElem.NumField())
+		return fmt.Errorf("provided %d parameters, but struct has only %d fields", len(parts), structElem.NumField())
 	}
 
 	for i, part := range parts {
@@ -197,7 +197,7 @@ func (p *Parser) fillStructFromPositional(structElem reflect.Value, content stri
 		fieldType := structType.Field(i)
 		value := strings.TrimSpace(part)
 		if err := setFieldFromString(field, fieldType, value); err != nil {
-			return fmt.Errorf("设置第 %d 个字段 '%s' 出错: %w", i+1, fieldType.Name, err)
+			return fmt.Errorf("error setting field %d '%s': %w", i+1, fieldType.Name, err)
 		}
 	}
 	return nil
@@ -206,7 +206,7 @@ func (p *Parser) fillStructFromPositional(structElem reflect.Value, content stri
 // setFieldFromString 是一个通用的字段设置函数，支持 string, bool, []string
 func setFieldFromString(field reflect.Value, fieldType reflect.StructField, value string) error {
 	if !field.CanSet() {
-		return fmt.Errorf("字段不可设置")
+		return fmt.Errorf("field cannot be set")
 	}
 
 	switch field.Kind() {
@@ -219,7 +219,7 @@ func setFieldFromString(field reflect.Value, fieldType reflect.StructField, valu
 			if value == "" {
 				b = false
 			} else {
-				return fmt.Errorf("'%s' 不是一个有效的布尔值", value)
+				return fmt.Errorf("'%s' is not a valid boolean value", value)
 			}
 		}
 		field.SetBool(b)
@@ -241,7 +241,7 @@ func setFieldFromString(field reflect.Value, fieldType reflect.StructField, valu
 			field.Set(reflect.ValueOf(values))
 		}
 	default:
-		return fmt.Errorf("不支持的目标字段类型: %s", field.Kind())
+		return fmt.Errorf("unsupported target field type: %s", field.Kind())
 	}
 	return nil
 }
@@ -262,7 +262,7 @@ func (p *Parser) parseContent(content string) (map[string]string, error) {
 		}
 		keyValue := strings.SplitN(part, "=", 2)
 		if len(keyValue) != 2 {
-			return nil, fmt.Errorf("无效的参数格式: '%s'", part)
+			return nil, fmt.Errorf("invalid parameter format: '%s'", part)
 		}
 		key := strings.TrimSpace(keyValue[0])
 		value := strings.TrimSpace(keyValue[1])
@@ -308,7 +308,7 @@ func (p *Parser) fillStruct(structElem reflect.Value, args map[string]string) er
 				field.Set(reflect.ValueOf(values))
 			}
 		default:
-			return fmt.Errorf("不支持的字段类型: %s (%s)", fieldType.Name, field.Kind())
+			return fmt.Errorf("unsupported field type: %s (%s)", fieldType.Name, field.Kind())
 		}
 	}
 	return nil
@@ -333,7 +333,7 @@ func (p *Parser) validateStruct(structElem reflect.Value) error {
 				}
 			}
 			if isZero {
-				return fmt.Errorf("字段 '%s' 是必须的，但值为空", fieldType.Name)
+				return fmt.Errorf("field '%s' is required but value is empty", fieldType.Name)
 			}
 		}
 	}

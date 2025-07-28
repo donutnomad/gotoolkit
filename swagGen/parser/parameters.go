@@ -49,7 +49,7 @@ func ParseParameters(rawInput string) ([]Parameter, error) {
 	// 1. 预处理输入字符串
 	content := strings.TrimSpace(rawInput)
 	if !strings.HasPrefix(content, "(") || !strings.HasSuffix(content, ")") {
-		return nil, errors.New("无效的输入格式：必须由一对括号 '()' 包裹")
+		return nil, errors.New("invalid input format: must be wrapped by parentheses '()'")
 	}
 	content = content[1 : len(content)-1] // 去掉 ( 和 )
 	if strings.TrimSpace(content) == "" {
@@ -77,7 +77,7 @@ func ParseParameters(rawInput string) ([]Parameter, error) {
 		if strings.HasPrefix(part, "/*") {
 			endCommentIndex := strings.Index(part, "*/")
 			if endCommentIndex == -1 {
-				return nil, fmt.Errorf("解析错误：在 '%s' 中找到未闭合的块注释 '/*'", part)
+				return nil, fmt.Errorf("parse error: found unclosed block comment '/*' in '%s'", part)
 			}
 			currentTag = strings.TrimSpace(part[2:endCommentIndex])
 			definitionPart = strings.TrimSpace(part[endCommentIndex+2:])
@@ -127,7 +127,7 @@ func ParseParameters(rawInput string) ([]Parameter, error) {
 			}
 
 			if len(nameAccumulator) == 0 {
-				return nil, fmt.Errorf("解析错误：在 '%s' 中找到类型 '%s' 但没有对应的参数名", part, paramType)
+				return nil, fmt.Errorf("parse error: found type '%s' but no corresponding parameter name in '%s'", paramType, part)
 			}
 
 			// 优先使用当前片段的标签，否则使用累积的标签
@@ -157,7 +157,7 @@ func ParseParameters(rawInput string) ([]Parameter, error) {
 
 	// 6. 检查是否有悬空的参数名（只有名字没有类型）
 	if len(nameAccumulator) > 0 {
-		return nil, fmt.Errorf("解析错误：参数 '%s' 缺少类型定义", strings.Join(nameAccumulator, ", "))
+		return nil, fmt.Errorf("parse error: parameters '%s' missing type definition", strings.Join(nameAccumulator, ", "))
 	}
 
 	return result, nil
