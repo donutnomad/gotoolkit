@@ -9,7 +9,7 @@ import (
 	parsers "github.com/donutnomad/gotoolkit/swagGen/parser"
 )
 
-// SwagGenApplication 应用程序主结构
+// SwagGenApplication main application structure
 type SwagGenApplication struct {
 	config           *GenerationConfig
 	interfaceParser  InterfaceParserInterface
@@ -19,7 +19,7 @@ type SwagGenApplication struct {
 	fileSystem       FileSystemInterface
 }
 
-// NewSwagGenApplication 创建新的应用程序实例
+// NewSwagGenApplication creates a new application instance
 func NewSwagGenApplication(config *GenerationConfig) *SwagGenApplication {
 	app := &SwagGenApplication{
 		config:     config,
@@ -27,102 +27,102 @@ func NewSwagGenApplication(config *GenerationConfig) *SwagGenApplication {
 		fileSystem: NewDefaultFileSystem(),
 	}
 
-	// 初始化组件
+	// Initialize components
 	app.initializeComponents()
 	return app
 }
 
-// initializeComponents 初始化各个组件
+// initializeComponents initializes all components
 func (app *SwagGenApplication) initializeComponents() {
-	// 创建导入管理器
+	// Create import manager
 	importMgr := NewEnhancedImportManager("")
 
-	// 创建解析器适配器
+	// Create parser adapter
 	app.interfaceParser = NewInterfaceParserAdapter(importMgr)
 	app.swaggerGenerator = NewSwaggerGeneratorAdapter(nil)
 	app.ginGenerator = NewGinGeneratorAdapter(nil)
 }
 
-// Run 运行应用程序主逻辑
+// Run executes the main application logic
 func (app *SwagGenApplication) Run() error {
-	app.logger.Info("开始执行 swagGen...")
+	app.logger.Info("starting swagGen execution...")
 
-	// 验证配置
+	// Validate configuration
 	if err := app.config.Validate(); err != nil {
-		return NewValidationError("配置验证失败", err.Error())
+		return NewValidationError("configuration validation failed", err.Error())
 	}
 
-	// 解析接口
+	// Parse interfaces
 	collection, err := app.parseInterfaces()
 	if err != nil {
 		return err
 	}
 
-	// 过滤接口
+	// Filter interfaces
 	if err := app.filterInterfaces(collection); err != nil {
 		return err
 	}
 
-	// 验证接口
+	// Validate interfaces
 	if err := app.validateInterfaces(collection); err != nil {
 		return err
 	}
 
-	// 生成代码
+	// Generate code
 	output, err := app.generateCode(collection)
 	if err != nil {
 		return err
 	}
 
-	// 写入文件
+	// Write file
 	if err := app.writeOutput(output); err != nil {
 		return err
 	}
 
-	app.logger.Info("swagGen 执行完成")
+	app.logger.Info("swagGen execution completed")
 	return nil
 }
 
-// parseInterfaces 解析接口定义
+// parseInterfaces parses interface definitions
 func (app *SwagGenApplication) parseInterfaces() (*InterfaceCollection, error) {
-	app.logger.Info("开始解析接口...")
+	app.logger.Info("starting interface parsing...")
 
 	var collection *InterfaceCollection
 	var err error
 
-	// 检查路径类型
+	// Check path type
 	if app.fileSystem.IsDir(app.config.Path) {
-		app.logger.Debug("解析目录: %s", app.config.Path)
+		app.logger.Debug("parsing directory: %s", app.config.Path)
 		collection, err = app.interfaceParser.ParseDirectory(app.config.Path)
 	} else {
-		app.logger.Debug("解析文件: %s", app.config.Path)
+		app.logger.Debug("parsing file: %s", app.config.Path)
 		collection, err = app.interfaceParser.ParseFile(app.config.Path)
 	}
 
 	if err != nil {
-		return nil, NewParseError("接口解析失败", "", err)
+		return nil, NewParseError("interface parsing failed", "", err)
 	}
 
-	app.logger.Info("解析完成，找到 %d 个接口", len(collection.Interfaces))
+	app.logger.Info("parsing completed, found %d interfaces", len(collection.Interfaces))
 	return collection, nil
 }
 
-// filterInterfaces 过滤接口
+// filterInterfaces filters interfaces
 func (app *SwagGenApplication) filterInterfaces(collection *InterfaceCollection) error {
 	if len(app.config.Interfaces) == 0 {
 		return nil
 	}
 
-	app.logger.Debug("过滤接口: %v", app.config.Interfaces)
+	app.logger.Debug("filtering interfaces: %v", app.config.Interfaces)
 
 	originalCount := len(collection.Interfaces)
 	collection.Interfaces = app.filterInterfacesByNames(collection.Interfaces, app.config.Interfaces)
 
-	app.logger.Info("接口过滤完成: %d -> %d", originalCount, len(collection.Interfaces))
+	app.logger.Info("interface filtering completed: %d -> %d", originalCount, len(collection.Interfaces))
 	return nil
 }
 
-// filterInterfacesByNames 根据名称过滤接口
+// filterInterfacesByNames filters interfaces by names
 func (app *SwagGenApplication) filterInterfacesByNames(interfaces []SwaggerInterface, names []string) []SwaggerInterface {
 	var filtered []SwaggerInterface
 
@@ -140,74 +140,74 @@ func (app *SwagGenApplication) filterInterfacesByNames(interfaces []SwaggerInter
 	return filtered
 }
 
-// validateInterfaces 验证接口的有效性
+// validateInterfaces validates the validity of interfaces
 func (app *SwagGenApplication) validateInterfaces(collection *InterfaceCollection) error {
 	if len(collection.Interfaces) == 0 {
-		return NewValidationError("未找到有效接口", "请检查接口定义是否包含正确的 Swagger 注释")
+		return NewValidationError("no valid interfaces found", "please check if interface definitions contain correct Swagger comments")
 	}
 
-	app.logger.Debug("验证 %d 个接口", len(collection.Interfaces))
+	app.logger.Debug("validating %d interfaces", len(collection.Interfaces))
 
 	for _, iface := range collection.Interfaces {
 		if len(iface.Methods) == 0 {
-			app.logger.Warn("接口 %s 没有包含任何方法", iface.Name)
+			app.logger.Warn("interface %s contains no methods", iface.Name)
 			continue
 		}
 
-		app.logger.Debug("  - %s (%d 个方法)", iface.Name, len(iface.Methods))
+		app.logger.Debug("  - %s (%d methods)", iface.Name, len(iface.Methods))
 	}
 
 	return nil
 }
 
-// generateCode 生成完整代码
+// generateCode generates complete code
 func (app *SwagGenApplication) generateCode(collection *InterfaceCollection) (string, error) {
-	app.logger.Info("开始生成代码...")
+	app.logger.Info("starting code generation...")
 
-	// 设置包路径
+	// Set package path
 	packagePath := app.getPackagePath()
 	collection.ImportMgr.packagePath = packagePath
 
-	// 设置生成器的接口集合
+	// Set generator interface collection
 	app.swaggerGenerator.SetInterfaces(collection)
 	app.ginGenerator.SetInterfaces(collection)
 
 	var parts []string
 
-	// 生成文件头部
+	// Generate file header
 	header := app.swaggerGenerator.GenerateFileHeader(app.inferPackageName())
 	parts = append(parts, header)
 
-	// 标记使用的包
+	// Mark used packages
 	app.markUsedPackages(collection)
 
-	// 生成导入声明
+	// Generate import declarations
 	imports := app.swaggerGenerator.GenerateImports()
 	if imports != "" {
 		parts = append(parts, imports, "")
 	}
 
-	// 生成类型引用
+	// Generate type references
 	if !app.config.SkipTypeReference {
 		typeRefs, err := app.generateTypeReferences(collection)
 		if err != nil {
-			return "", NewGenerateError("类型引用生成失败", "", err)
+			return "", NewGenerateError("type reference generation failed", "", err)
 		}
 		if typeRefs != "" {
 			parts = append(parts, typeRefs, "")
 		}
 	}
 
-	// 生成 Swagger 注释
+	// Generate Swagger comments
 	swaggerComments, err := app.swaggerGenerator.GenerateSwaggerComments()
 	if err != nil {
-		return "", NewGenerateError("Swagger 注释生成失败", "", err)
+		return "", NewGenerateError("swagger comment generation failed", "", err)
 	}
 
-	// 生成 Gin 绑定代码
+	// Generate Gin binding code
 	ginCode, err := app.ginGenerator.GenerateComplete(swaggerComments)
 	if err != nil {
-		return "", NewGenerateError("Gin 代码生成失败", "", err)
+		return "", NewGenerateError("gin code generation failed", "", err)
 	}
 
 	if ginCode != "" {
@@ -215,22 +215,22 @@ func (app *SwagGenApplication) generateCode(collection *InterfaceCollection) (st
 	}
 
 	result := strings.Join(parts, "\n")
-	app.logger.Info("代码生成完成，总长度: %d 字符", len(result))
+	app.logger.Info("code generation completed, total length: %d characters", len(result))
 
 	return result, nil
 }
 
-// markUsedPackages 标记使用的包
+// markUsedPackages marks used packages
 func (app *SwagGenApplication) markUsedPackages(collection *InterfaceCollection) {
 	for _, iface := range collection.Interfaces {
 		for _, method := range iface.Methods {
-			// 标记返回类型使用的包
+			// Mark packages used by return types
 			packages := parsers.ExtractPackages(method.ResponseType.FullName)
 			for _, pkgName := range packages {
 				app.markPackageAsUsed(collection.ImportMgr, pkgName)
 			}
 
-			// 标记参数类型使用的包
+			// Mark packages used by parameter types
 			for _, param := range method.Parameters {
 				paramPackages := parsers.ExtractPackages(param.Type.FullName)
 				for _, pkgName := range paramPackages {
@@ -241,7 +241,7 @@ func (app *SwagGenApplication) markUsedPackages(collection *InterfaceCollection)
 	}
 }
 
-// markPackageAsUsed 标记包为已使用
+// markPackageAsUsed marks a package as used
 func (app *SwagGenApplication) markPackageAsUsed(importMgr *EnhancedImportManager, pkgName string) {
 	for _, info := range importMgr.imports {
 		parts := strings.Split(info.Path, "/")
@@ -251,24 +251,24 @@ func (app *SwagGenApplication) markPackageAsUsed(importMgr *EnhancedImportManage
 	}
 }
 
-// generateTypeReferences 生成类型引用
+// generateTypeReferences generates type references
 func (app *SwagGenApplication) generateTypeReferences(collection *InterfaceCollection) (string, error) {
-	// 使用原有的逻辑生成类型引用
-	// 这个功能暂时使用简化实现，需要查看原有的 SwaggerGenerator 中的实现
+	// Use original logic to generate type references
+	// This feature uses simplified implementation for now, need to check original SwaggerGenerator implementation
 	var refs []string
 
-	// 收集所有需要引用的类型
+	// Collect all types that need references
 	typeSet := make(map[string]bool)
 
 	for _, iface := range collection.Interfaces {
 		for _, method := range iface.Methods {
-			// 添加返回类型的引用
+			// Add return type references
 			if method.ResponseType.FullName != "" && method.ResponseType.Package != "" {
 				typeDef := fmt.Sprintf("var _ %s", method.ResponseType.FullName)
 				typeSet[typeDef] = true
 			}
 
-			// 添加参数类型的引用
+			// Add parameter type references
 			for _, param := range method.Parameters {
 				if param.Type.FullName != "" && param.Type.Package != "" {
 					typeDef := fmt.Sprintf("var _ %s", param.Type.FullName)
@@ -278,7 +278,7 @@ func (app *SwagGenApplication) generateTypeReferences(collection *InterfaceColle
 		}
 	}
 
-	// 转换为切片并排序
+	// Convert to slice and sort
 	for typeDef := range typeSet {
 		refs = append(refs, typeDef)
 	}
@@ -291,52 +291,52 @@ func (app *SwagGenApplication) generateTypeReferences(collection *InterfaceColle
 	return "", nil
 }
 
-// writeOutput 写入输出文件
+// writeOutput writes output file
 func (app *SwagGenApplication) writeOutput(output string) error {
-	app.logger.Info("开始写入输出文件...")
+	app.logger.Info("starting output file writing...")
 
-	// 确定输出路径
+	// Determine output path
 	outputPath := app.determineOutputPath()
 
-	// 格式化代码
+	// Format code
 	formattedBytes, err := gofmt.FormatBytes([]byte(output))
 	if err != nil {
-		return NewGenerateError("代码格式化失败", "", err)
+		return NewGenerateError("code formatting failed", "", err)
 	}
 
-	// 写入文件
+	// Write file
 	if err := app.fileSystem.WriteFile(outputPath, formattedBytes, 0644); err != nil {
-		return NewFileError("写入文件失败", outputPath, err)
+		return NewFileError("failed to write file", outputPath, err)
 	}
 
-	app.logger.Info("成功生成文件: %s", outputPath)
+	app.logger.Info("successfully generated file: %s", outputPath)
 	return nil
 }
 
-// determineOutputPath 确定输出文件路径
+// determineOutputPath determines output file path
 func (app *SwagGenApplication) determineOutputPath() string {
 	outputPath := app.config.OutputFile
 
-	// 如果输出路径已经是绝对路径，直接使用
+	// If output path is already absolute, use it directly
 	if filepath.IsAbs(outputPath) {
 		return outputPath
 	}
 
-	// 如果输出路径是相对路径，需要根据输入路径确定基础目录
+	// If output path is relative, determine base directory based on input path
 	var baseDir string
 	if app.fileSystem.IsDir(app.config.Path) {
-		// 输入是目录，输出文件放在该目录下
+		// Input is directory, put output file in that directory
 		baseDir = app.config.Path
 	} else {
-		// 输入是文件，输出文件放在该文件所在目录
+		// Input is file, put output file in the same directory as the file
 		baseDir = filepath.Dir(app.config.Path)
 	}
 
-	// 构建最终的输出路径
+	// Build final output path
 	return filepath.Join(baseDir, outputPath)
 }
 
-// getPackagePath 获取包路径
+// getPackagePath gets package path
 func (app *SwagGenApplication) getPackagePath() string {
 	path := app.config.Path
 
@@ -352,40 +352,40 @@ func (app *SwagGenApplication) getPackagePath() string {
 	return absPath
 }
 
-// inferPackageName 推断包名
+// inferPackageName infers package name
 func (app *SwagGenApplication) inferPackageName() string {
 	if app.config.Package != "" {
 		return app.config.Package
 	}
 
-	// 从文件或目录推断包名
+	// Infer package name from file or directory
 	if !app.fileSystem.IsDir(app.config.Path) {
-		// 如果是文件，解析文件获取包名
+		// If it's a file, parse file to get package name
 		if pkgName := app.extractPackageNameFromFile(app.config.Path); pkgName != "" {
 			return pkgName
 		}
-		// 使用文件所在目录名
+		// Use directory name of the file
 		return filepath.Base(filepath.Dir(app.config.Path))
 	}
 
-	// 如果是目录，尝试从目录中的 Go 文件获取包名
+	// If it's a directory, try to get package name from Go files in the directory
 	if pkgName := app.extractPackageNameFromDir(app.config.Path); pkgName != "" {
 		return pkgName
 	}
 
-	// 使用目录名作为包名
+	// Use directory name as package name
 	return filepath.Base(app.config.Path)
 }
 
-// extractPackageNameFromFile 从文件中提取包名
+// extractPackageNameFromFile extracts package name from file
 func (app *SwagGenApplication) extractPackageNameFromFile(filename string) string {
 	content, err := app.fileSystem.ReadFile(filename)
 	if err != nil {
 		return ""
 	}
 
-	// 这里需要实现实际的包名提取逻辑
-	// 暂时使用简单的字符串匹配
+	// Need to implement actual package name extraction logic here
+	// Use simple string matching for now
 	lines := strings.Split(string(content), "\n")
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
@@ -400,7 +400,7 @@ func (app *SwagGenApplication) extractPackageNameFromFile(filename string) strin
 	return ""
 }
 
-// extractPackageNameFromDir 从目录中提取包名
+// extractPackageNameFromDir extracts package name from directory
 func (app *SwagGenApplication) extractPackageNameFromDir(dir string) string {
 	files, err := app.fileSystem.ListGoFiles(dir)
 	if err != nil {
@@ -418,12 +418,12 @@ func (app *SwagGenApplication) extractPackageNameFromDir(dir string) string {
 	return ""
 }
 
-// SetLogger 设置日志记录器
+// SetLogger sets logger
 func (app *SwagGenApplication) SetLogger(logger LoggerInterface) {
 	app.logger = logger
 }
 
-// SetFileSystem 设置文件系统接口
+// SetFileSystem sets file system interface
 func (app *SwagGenApplication) SetFileSystem(fs FileSystemInterface) {
 	app.fileSystem = fs
 }
