@@ -83,7 +83,7 @@ func NewDefaultConfig() *GenerationConfig {
 // Validate 验证配置的有效性
 func (cfg *GenerationConfig) Validate() error {
 	if cfg.Path == "" {
-		return fmt.Errorf("路径参数不能为空")
+		return fmt.Errorf("path parameter cannot be empty")
 	}
 
 	if cfg.OutputFile == "" {
