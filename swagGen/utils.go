@@ -120,17 +120,17 @@ func NewBasicValidator() *BasicValidator {
 // ValidateInterface 验证接口定义的有效性
 func (v *BasicValidator) ValidateInterface(iface SwaggerInterface) error {
 	if iface.Name == "" {
-		return NewValidationError("接口名称为空", "接口必须有名称")
+		return NewValidationError("interface name is empty", "interface must have a name")
 	}
 
 	if len(iface.Methods) == 0 {
-		return NewValidationError("接口方法为空", fmt.Sprintf("接口 %s 没有定义任何方法", iface.Name))
+		return NewValidationError("interface methods are empty", fmt.Sprintf("interface %s has no methods defined", iface.Name))
 	}
 
 	// 验证每个方法
 	for _, method := range iface.Methods {
 		if err := v.ValidateMethod(method); err != nil {
-			return fmt.Errorf("接口 %s 的方法验证失败: %w", iface.Name, err)
+			return fmt.Errorf("interface %s method validation failed: %w", iface.Name, err)
 		}
 	}
 
@@ -140,27 +140,27 @@ func (v *BasicValidator) ValidateInterface(iface SwaggerInterface) error {
 // ValidateMethod 验证方法定义的有效性
 func (v *BasicValidator) ValidateMethod(method SwaggerMethod) error {
 	if method.Name == "" {
-		return NewValidationError("方法名称为空", "方法必须有名称")
+		return NewValidationError("method name is empty", "method must have a name")
 	}
 
 	// 检查是否有路由定义
 	paths := method.GetPaths()
 	if len(paths) == 0 {
-		return NewValidationError("方法缺少路由定义",
+		return NewValidationError("method missing route definition",
 			fmt.Sprintf("方法 %s 必须包含路由注释（如 @GET、@POST 等）", method.Name))
 	}
 
 	// 验证HTTP方法
 	httpMethod := method.GetHTTPMethod()
 	if !v.isValidHTTPMethod(httpMethod) {
-		return NewValidationError("无效的HTTP方法",
+		return NewValidationError("invalid HTTP method",
 			fmt.Sprintf("方法 %s 包含无效的HTTP方法: %s", method.Name, httpMethod))
 	}
 
 	// 验证参数
 	for _, param := range method.Parameters {
 		if err := v.ValidateParameter(param); err != nil {
-			return fmt.Errorf("方法 %s 的参数验证失败: %w", method.Name, err)
+			return fmt.Errorf("method %s parameter validation failed: %w", method.Name, err)
 		}
 	}
 
@@ -170,17 +170,17 @@ func (v *BasicValidator) ValidateMethod(method SwaggerMethod) error {
 // ValidateParameter 验证参数定义的有效性
 func (v *BasicValidator) ValidateParameter(param Parameter) error {
 	if param.Name == "" {
-		return NewValidationError("参数名称为空", "参数必须有名称")
+		return NewValidationError("parameter name is empty", "parameter must have a name")
 	}
 
 	if param.Type.FullName == "" {
-		return NewValidationError("参数类型为空",
+		return NewValidationError("parameter type is empty",
 			fmt.Sprintf("参数 %s 必须有类型定义", param.Name))
 	}
 
 	// 验证参数来源
 	if param.Source != "" && !v.isValidParameterSource(param.Source) {
-		return NewValidationError("无效的参数来源",
+		return NewValidationError("invalid parameter source",
 			fmt.Sprintf("参数 %s 的来源 %s 无效", param.Name, param.Source))
 	}
 
@@ -264,7 +264,7 @@ func (fs *MemoryFileSystem) ReadFile(filename string) ([]byte, error) {
 	if content, exists := fs.files[filename]; exists {
 		return content, nil
 	}
-	return nil, fmt.Errorf("文件不存在: %s", filename)
+	return nil, fmt.Errorf("file does not exist: %s", filename)
 }
 
 // WriteFile 向内存写入文件内容

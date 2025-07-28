@@ -77,19 +77,19 @@ func (p *InterfaceParser) ParseFile(filename string) (*InterfaceCollection, erro
 	// 解析 Go 源文件，包含注释信息
 	file, err := parser.ParseFile(fileSet, filename, nil, parser.ParseComments)
 	if err != nil {
-		return nil, NewParseError("Go 文件解析失败", filename, err)
+		return nil, NewParseError("Go file parsing failed", filename, err)
 	}
 
 	// 读取文件内容，用于后续的注释提取
 	fileBs, err := os.ReadFile(filename)
 	if err != nil {
-		return nil, NewFileError("读取文件失败", filename, err)
+		return nil, NewFileError("failed to read file", filename, err)
 	}
 
 	// 获取包路径和导入信息
 	packagePath, err := p.getPackagePath(filename)
 	if err != nil {
-		return nil, NewParseError("获取包路径失败", filename, err)
+		return nil, NewParseError("failed to get package path", filename, err)
 	}
 
 	// 从 AST 中提取导入信息
@@ -188,8 +188,8 @@ func (p *InterfaceParser) parseInterfaceComments(genDecl *ast.GenDecl, swaggerIn
 			if strings.HasPrefix(line, "@") {
 				parse, err := ps.Parse(line)
 				if err != nil {
-					return NewParseError("接口注释解析失败",
-						fmt.Sprintf("在接口 %s 中解析注释 '%s' 失败", swaggerInterface.Name, line), err)
+					return NewParseError("interface comment parsing failed",
+						fmt.Sprintf("failed to parse comment '%s' in interface %s", line, swaggerInterface.Name), err)
 				}
 				swaggerInterface.CommonDef = append(swaggerInterface.CommonDef, parse.(parsers.Definition))
 			}
@@ -342,7 +342,7 @@ func (p *InterfaceParser) processPathParams(routerPath string, pathParams []Para
 			allParams[paramIndex].Source = ParamSourcePath
 		} else {
 			// 记录警告而不是中断程序
-			fmt.Printf("警告: 在路径 %s 中未找到参数 `%s`，请使用 @PARAM(%s) 注释来修复\n",
+			fmt.Printf("warning: parameter `%s` not found in path %s, please use @PARAM(%s) annotation to fix\n",
 				routerPath, pathParam.Name, pathParam.Name)
 		}
 	}
