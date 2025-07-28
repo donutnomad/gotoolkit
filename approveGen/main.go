@@ -41,7 +41,7 @@ func (a JenStatementSlice) As() []jen.Code {
 	})
 }
 
-func GenMethodCallApproval(genMethodName string, addUnmarshalMethodArgs bool, everyMethodSuffix string, methods []MyMethod, codeUnmarshalFailed, codeUnknownMethod any, getType func(typ ast.Expr, method MyMethod) string) JenStatementSlice {
+func GenMethodCallApproval(genMethodName string, addUnmarshalMethodArgs bool, everyMethodSuffix string, methods []MyMethod, codeUnmarshalFailed, codeUnknownMethod any, defaultSuccess bool, getType func(typ ast.Expr, method MyMethod) string) JenStatementSlice {
 	var codeUnmarshalFailedC gg.Node
 	var codeUnknownMethodC gg.Node
 	if v, ok := codeUnmarshalFailed.(string); ok {
@@ -98,7 +98,11 @@ func GenMethodCallApproval(genMethodName string, addUnmarshalMethodArgs bool, ev
 		)
 	}
 
-	switchOp.NewDefault().AddBody(gg.Return(gg.Call("Fail[any]").AddParameter(codeUnmarshalFailedC)))
+	if defaultSuccess {
+		switchOp.NewDefault().AddBody(gg.Return(gg.Call("Success[any]").AddParameter(gg.String("struct{}{}"))))
+	} else {
+		switchOp.NewDefault().AddBody(gg.Return(gg.Call("Fail[any]").AddParameter(codeUnmarshalFailedC)))
+	}
 	switchOp2.NewDefault().AddBody(gg.Return(gg.String("nil, nil")))
 
 	func1.AddBody(switchOp)
@@ -395,12 +399,12 @@ func main() {
 	}
 
 	codes.Line()
-	m1 := GenMethodCallApproval("CallMethodForApproval", true, "", allMethods, "CodeUnmarshalFailed", "CodeUnknownMethod", func(typ ast.Expr, method MyMethod) string {
+	m1 := GenMethodCallApproval("CallMethodForApproval", true, "", allMethods, "CodeUnmarshalFailed", "CodeUnknownMethod", false, func(typ ast.Expr, method MyMethod) string {
 		return getNameFunc(typ, method.Imports)
 	})
 	codes.Add(m1.As()...)
 	fmt.Println("-===============")
-	m2 := GenMethodCallApproval("CallMethodForApprovalHookRejected", false, "HookRejected", hookRejectedMethods, "CodeUnmarshalFailed", "CodeUnknownMethod", func(typ ast.Expr, method MyMethod) string {
+	m2 := GenMethodCallApproval("CallMethodForApprovalHookRejected", false, "HookRejected", hookRejectedMethods, "CodeUnmarshalFailed", "CodeUnknownMethod", true, func(typ ast.Expr, method MyMethod) string {
 		return getNameFunc(typ, method.Imports)
 	})
 	codes.Add(m2.As()...)
