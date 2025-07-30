@@ -352,6 +352,10 @@ func main() {
 			if info := methods.ParseNoteMethod(body); info != nil {
 				methodCodes = append(methodCodes, info.Generator().Generate(receiver, structName))
 			}
+			// 生成方法 Json()
+			if info := methods.ParseJsonMethod(body); info != nil {
+				methodCodes = append(methodCodes, info.Generator().Generate(receiver, structName))
+			}
 			// 为对象结构体生成自定义方法
 			if info := methods.ParseFuncMethod(body); info != nil {
 				template, ok := funcTemplateMapping[info.Name]
