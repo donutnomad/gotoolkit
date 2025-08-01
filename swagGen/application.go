@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/donutnomad/gotoolkit/swagGen/gofmt"
@@ -62,6 +63,11 @@ func (app *SwagGenApplication) Run() error {
 	if err := app.filterInterfaces(collection); err != nil {
 		return err
 	}
+
+	// 排序collection.Interfaces按name从小到大
+	sort.Slice(collection.Interfaces, func(i, j int) bool {
+		return collection.Interfaces[i].Name < collection.Interfaces[j].Name
+	})
 
 	// Validate interfaces
 	if err := app.validateInterfaces(collection); err != nil {

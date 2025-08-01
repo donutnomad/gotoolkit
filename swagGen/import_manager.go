@@ -20,23 +20,41 @@ func NewEnhancedImportManager(packagePath string) *EnhancedImportManager {
 	}
 }
 
-// AddOriginalImports 添加原始导入信息
+// AddOriginalImports 添加原始导入信息 - 仅保存导入映射，不自动添加到最终导入列表
 func (mgr *EnhancedImportManager) AddOriginalImports(originalImports xast.ImportInfoSlice) {
+	// 保存原始导入映射，用于后续按需添加
 	for _, originalImport := range originalImports {
 		path := originalImport.Path
 		if path == "" || path == mgr.packagePath {
 			continue
 		}
 
-		// 检查是否已经存在
-		if _, exists := mgr.imports[path]; exists {
-			// 如果已存在，更新原始别名信息
-			mgr.imports[path].OriginalAlias = originalImport.Alias
+		// 保存原始导入的别名映射关系
+		if originalImport.Alias != "" {
+			// 如果有显式别名，保存映射关系
+			mgr.aliasMapping[path] = originalImport.Alias
 		} else {
-			// 创建新的导入信息
-			mgr.ensureAlias(path)
-			if info, exists := mgr.imports[path]; exists {
-				info.OriginalAlias = originalImport.Alias
+			// 如果没有显式别名，从路径推导包名
+			parts := strings.Split(path, "/")
+			if len(parts) > 0 {
+				packageName := parts[len(parts)-1]
+				// 清理包名（移除版本后缀等）
+				packageName = strings.TrimSuffix(packageName, ".git")
+				if strings.HasPrefix(packageName, "v") && len(packageName) > 1 {
+					// 检查是否是版本号
+					isVersion := true
+					for i := 1; i < len(packageName); i++ {
+						if packageName[i] < '0' || packageName[i] > '9' {
+							isVersion = false
+							break
+						}
+					}
+					if isVersion && len(parts) > 1 {
+						// 使用上一级目录名
+						packageName = parts[len(parts)-2]
+					}
+				}
+				mgr.aliasMapping[path] = packageName
 			}
 		}
 	}
@@ -65,7 +83,21 @@ func (mgr *EnhancedImportManager) AddTypeReference(pkgPath, typeName string) str
 
 // ensureAlias 确保包有别名
 func (mgr *EnhancedImportManager) ensureAlias(pkgPath string) string {
+	// 检查是否已经有导入信息
+	if info, exists := mgr.imports[pkgPath]; exists {
+		return info.Alias
+	}
+
+	// 检查是否已经存在别名映射
 	if alias, exists := mgr.aliasMapping[pkgPath]; exists {
+		// 使用已存在的别名映射创建导入信息
+		mgr.imports[pkgPath] = &ImportInfo{
+			Path:          pkgPath,
+			Alias:         alias,
+			Used:          true,
+			DirectlyUsed:  false, // 默认为仅类型引用
+			OriginalAlias: alias, // 保存原始别名
+		}
 		return alias
 	}
 
@@ -89,30 +121,25 @@ func (mgr *EnhancedImportManager) ensureAlias(pkgPath string) string {
 		}
 	}
 
+	var finalAlias string
 	if mgr.aliasCounter[baseName] == 0 {
 		// 第一次出现，使用原名
-		mgr.aliasMapping[pkgPath] = baseName
+		finalAlias = baseName
 		mgr.aliasCounter[baseName] = 1
-		mgr.imports[pkgPath] = &ImportInfo{
-			Path:         pkgPath,
-			Alias:        baseName,
-			Used:         true,
-			DirectlyUsed: false, // 默认为仅类型引用
-		}
-		return baseName
+	} else {
+		// 已存在同名包，使用别名
+		mgr.aliasCounter[baseName]++
+		finalAlias = fmt.Sprintf("%s%d", baseName, mgr.aliasCounter[baseName])
 	}
 
-	// 已存在同名包，使用别名
-	mgr.aliasCounter[baseName]++
-	alias := fmt.Sprintf("%s%d", baseName, mgr.aliasCounter[baseName])
-	mgr.aliasMapping[pkgPath] = alias
+	mgr.aliasMapping[pkgPath] = finalAlias
 	mgr.imports[pkgPath] = &ImportInfo{
 		Path:         pkgPath,
-		Alias:        alias,
+		Alias:        finalAlias,
 		Used:         true,
 		DirectlyUsed: false, // 默认为仅类型引用
 	}
-	return alias
+	return finalAlias
 }
 
 // AddImport 添加导入 - 标记为直接使用
