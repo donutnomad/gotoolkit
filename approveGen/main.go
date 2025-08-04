@@ -159,19 +159,29 @@ func genGlobalFunc(comment string, method *MyMethod, formatFunctionName func(nam
 }
 
 var (
-	path            = flag.String("path", "", "dir path")
+	paths           = flag.String("path", "", "dir paths, separated by comma")
 	outputFileName_ = flag.String("out", "", "output filename")
 )
 
 func main() {
 	flag.Parse()
-	if *path == "" || *outputFileName_ == "" {
+	if *paths == "" || *outputFileName_ == "" {
 		fmt.Println("type parameter is required")
 		return
 	}
-	var pwd, outputFileName = *path, *outputFileName_
 
-	var files = getFiles(pwd)
+	var pathList = strings.Split(*paths, ",")
+	// Trim spaces from each path
+	for i, path := range pathList {
+		pathList[i] = strings.TrimSpace(path)
+	}
+	var outputFileName = *outputFileName_
+
+	var files []string
+	for _, pwd := range pathList {
+		_files := getFiles(pwd)
+		files = append(files, _files...)
+	}
 	if len(files) == 0 {
 		return
 	}
@@ -413,10 +423,12 @@ func main() {
 	})
 	codes.Add(m2.As()...)
 
-	err := codes.Save(filepath.Join(pwd, outputFileName))
+	// 保存到当前工作目录
+	err := codes.Save(outputFileName)
 	if err != nil {
 		panic(err)
 	}
+	pwd, _ := os.Getwd()
 	fmt.Println("Success:", filepath.Join(pwd, outputFileName))
 }
 
