@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"flag"
 	"fmt"
@@ -18,6 +19,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"text/template"
 
 	"github.com/dave/jennifer/jen"
 	"github.com/samber/lo"
@@ -41,87 +43,230 @@ func (a JenStatementSlice) As() []jen.Code {
 	})
 }
 
-func GenMethodCallApproval(genMethodName string, addUnmarshalMethodArgs bool, everyMethodSuffix string, methods []MyMethod, codeUnmarshalFailed, codeUnknownMethod any, defaultSuccess bool, getType func(typ ast.Expr, method MyMethod) string) JenStatementSlice {
-	var codeUnmarshalFailedC gg.Node
-	var codeUnknownMethodC gg.Node
-	if v, ok := codeUnmarshalFailed.(string); ok {
-		codeUnmarshalFailedC = gg.String(v)
-	} else {
-		codeUnmarshalFailedC = gg.Lit(v)
+// GenMethodCallApprovalData 模板数据结构
+type GenMethodCallApprovalData struct {
+	GenMethodName          string
+	AddUnmarshalMethodArgs bool
+	Methods                []MyMethod
+	EveryMethodSuffix      string
+	DefaultSuccess         bool
+	GetType                func(typ ast.Expr, method MyMethod) string
+	HookRejectedMap        map[string]bool // v2版本使用，标记哪些方法支持 HookRejected
+}
+
+// 方法调用审批生成器的模板
+const methodCallApprovalTemplate = `
+func {{.GenMethodName}}(a *AllServices, ctx context.Context, method string, content string) BaseResponse[any] {
+	switch method {
+{{- range .Methods}}
+	case "{{.GenMethod}}":
+		var p {{.OutStructName}}
+		if err := sonic.Unmarshal([]byte(content), &p); err != nil {
+			return Fail[any]("CodeUnmarshalFailed")
+		}
+		return a.{{nameWithoutPoint .StructName}}.{{.MethodName}}{{$.EveryMethodSuffix}}({{formatParams . $.GetType}}).ToAny()
+{{- end}}
+	default:
+{{- if .DefaultSuccess}}
+		return Success[any](struct{}{})
+{{- else}}
+		return Fail[any]("CodeUnknownMethod")
+{{- end}}
 	}
-	if v, ok := codeUnknownMethod.(string); ok {
-		codeUnknownMethodC = gg.String(v)
-	} else {
-		codeUnknownMethodC = gg.Lit(v)
+}
+
+{{- if .AddUnmarshalMethodArgs}}
+
+func UnmarshalMethodArgs(method string, content string) (any, error) {
+	switch method {
+{{- range .Methods}}
+	case "{{.GenMethod}}":
+		var p {{.OutStructName}}
+		if err := sonic.Unmarshal([]byte(content), &p); err != nil {
+			return nil, err
+		}
+		return &p, nil
+{{- end}}
+	default:
+		return nil, nil
+	}
+}
+{{- end}}
+`
+
+func GenMethodCallApproval(genMethodName string, addUnmarshalMethodArgs bool, everyMethodSuffix string, methods []MyMethod, getType func(typ ast.Expr, method MyMethod) string, defaultSuccess bool) JenStatementSlice {
+	data := GenMethodCallApprovalData{
+		GenMethodName:          genMethodName,
+		AddUnmarshalMethodArgs: addUnmarshalMethodArgs,
+		Methods:                methods,
+		EveryMethodSuffix:      everyMethodSuffix,
+		DefaultSuccess:         defaultSuccess,
+		GetType:                getType,
 	}
 
-	var g1 = gg.NewGroup()
-
-	func1 := g1.NewFunction(genMethodName).
-		AddParameter("a", "*AllServices").
-		AddParameter("ctx", "context.Context").
-		AddParameter("method", "string").
-		AddParameter("content", "string").
-		AddResult("", "BaseResponse[any]")
-
-	switchOp := gg.Switch("method")
-	switchOp2 := gg.Switch("method")
-
-	for _, method := range methods {
-		var structName = method.OutStructName()
-		var methodName = method.GenMethod()
-
-		switchOp.NewCase(gg.Lit(methodName)).AddBody(
-			gg.Var().AddDecl("p", structName),
-			gg.If(gg.String("err := sonic.Unmarshal([]byte(content), &p); err != nil")).AddBody(
-				gg.Return(gg.Call("Fail[any]").AddParameter(codeUnknownMethodC)),
-			),
-			gg.Return(gg.Call(method.MethodName+everyMethodSuffix).WithOwner("a."+nameWithoutPoint(method.StructName)).AddParameter(
-				lo.Map(method.AsParams(func(typ ast.Expr) string {
-					return getType(typ, method)
-				}), func(item Param, index int) any {
-					if item.Type == "context.Context" {
-						return gg.String("ctx")
-					} else {
-						return gg.String("p.%s", item.Name.UpperCamelCase())
-					}
-				})...,
-			).AddCall("ToAny")),
-		)
-
-		switchOp2.NewCase(gg.Lit(methodName)).AddBody(
-			gg.Var().AddDecl("p", structName),
-			gg.If(gg.String("err := sonic.Unmarshal([]byte(content), &p); err != nil")).AddBody(
-				gg.Return(gg.String("nil, err")),
-			),
-			gg.Return(gg.String("&p, nil")),
-		)
+	// 创建模板函数
+	funcMap := template.FuncMap{
+		"nameWithoutPoint": nameWithoutPoint,
+		"formatParams": func(method MyMethod, getType func(typ ast.Expr, method MyMethod) string) string {
+			params := method.AsParams(func(typ ast.Expr) string {
+				return getType(typ, method)
+			})
+			var result []string
+			for _, param := range params {
+				if param.Type == "context.Context" {
+					result = append(result, "ctx")
+				} else {
+					result = append(result, fmt.Sprintf("p.%s", param.Name.UpperCamelCase()))
+				}
+			}
+			return strings.Join(result, ", ")
+		},
 	}
 
-	if defaultSuccess {
-		switchOp.NewDefault().AddBody(gg.Return(gg.Call("Success[any]").AddParameter(gg.String("struct{}{}"))))
-	} else {
-		switchOp.NewDefault().AddBody(gg.Return(gg.Call("Fail[any]").AddParameter(codeUnmarshalFailedC)))
+	tmpl, err := template.New("methodCallApproval").Funcs(funcMap).Parse(methodCallApprovalTemplate)
+	if err != nil {
+		panic(fmt.Sprintf("解析模板失败: %v", err))
 	}
-	switchOp2.NewDefault().AddBody(gg.Return(gg.String("nil, nil")))
 
-	func1.AddBody(switchOp)
-
-	res := jen.Id(g1.String())
-	var output = []*jen.Statement{res}
-	if addUnmarshalMethodArgs {
-		func2 := gg.NewGroup()
-		func2.NewFunction("UnmarshalMethodArgs").
-			AddParameter("method", "string").
-			AddParameter("content", "string").
-			AddResult("", "any").AddResult("", "error").AddBody(
-			switchOp2,
-		)
-		unmarshalMethodArgs := jen.Id(func2.String())
-
-		output = append(output, jen.Line(), unmarshalMethodArgs)
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, data); err != nil {
+		panic(fmt.Sprintf("执行模板失败: %v", err))
 	}
-	return output
+
+	// 将生成的代码转换为 jen.Statement
+	code := jen.Id(buf.String())
+	return JenStatementSlice{code}
+}
+
+const methodCallApprovalTemplateV2 = `
+func {{.GenMethodName}}(targets []any, ctx context.Context, method string, content string, approved bool) error {
+	param, err := UnmarshalMethodArgs(method, content)
+	if err != nil {
+		return err
+	}
+	switch p := param.(type) {
+{{- range .Methods}}
+	case *{{.OutStructName}}:
+		type ApprovedInterface interface {
+			{{getApprovedMethodName .}}({{formatMethodSignature . $.GetType}}) error
+		}{{if index $.HookRejectedMap .GenMethod}}
+		type RejectedInterface interface {
+			{{getRejectedMethodName .}}({{formatMethodSignature . $.GetType}}) error
+		}{{end}}
+		for _, t := range targets {
+			if approved {
+				if target, ok := t.(ApprovedInterface); ok {
+					return target.{{getApprovedMethodName .}}({{formatParams . $.GetType}})
+				}
+			}{{if index $.HookRejectedMap .GenMethod}} else {
+				if target, ok := t.(RejectedInterface); ok {
+					return target.{{getRejectedMethodName .}}({{formatParams . $.GetType}})
+				}
+			}{{end}}
+		}
+{{- end}}
+	}
+	if (approved) {
+		return errors.New("CodeUnknownMethod")
+	}
+	return nil
+}
+
+{{- if .AddUnmarshalMethodArgs}}
+
+func UnmarshalMethodArgs(method string, content string) (any, error) {
+	switch method {
+{{- range .Methods}}
+	case "{{.GenMethod}}":
+		var p {{.OutStructName}}
+		if err := sonic.Unmarshal([]byte(content), &p); err != nil {
+			return nil, err
+		}
+		return &p, nil
+{{- end}}
+	default:
+		return nil, nil
+	}
+}
+{{- end}}
+`
+
+func GenMethodCallApprovalV2(genMethodName string, addUnmarshalMethodArgs bool, everyMethodSuffix string, methods []MyMethod, getType func(typ ast.Expr, method MyMethod) string, defaultSuccess bool, hookRejectedMap map[string]bool) JenStatementSlice {
+	data := GenMethodCallApprovalData{
+		GenMethodName:          genMethodName,
+		AddUnmarshalMethodArgs: addUnmarshalMethodArgs,
+		Methods:                methods,
+		EveryMethodSuffix:      everyMethodSuffix,
+		DefaultSuccess:         defaultSuccess,
+		GetType:                getType,
+		HookRejectedMap:        hookRejectedMap,
+	}
+
+	// 创建模板函数
+	funcMap := template.FuncMap{
+		"nameWithoutPoint": nameWithoutPoint,
+		"formatParams": func(method MyMethod, getType func(typ ast.Expr, method MyMethod) string) string {
+			params := method.AsParams(func(typ ast.Expr) string {
+				return getType(typ, method)
+			})
+			var result []string
+			for _, param := range params {
+				if param.Type == "context.Context" {
+					result = append(result, "ctx")
+				} else {
+					result = append(result, fmt.Sprintf("p.%s", param.Name.UpperCamelCase()))
+				}
+			}
+			return strings.Join(result, ", ")
+		},
+		"formatMethodSignature": func(method MyMethod, getType func(typ ast.Expr, method MyMethod) string) string {
+			params := method.AsParams(func(typ ast.Expr) string {
+				return getType(typ, method)
+			})
+			var result []string
+			for _, param := range params {
+				if param.Type == "context.Context" {
+					result = append(result, "ctx context.Context")
+				} else {
+					result = append(result, fmt.Sprintf("%s %s", param.Name.LowerCamelCase(), param.Type))
+				}
+			}
+			return strings.Join(result, ", ")
+		},
+		"methodWithSuffix": func(method MyMethod, suffix string) string {
+			methodName := method.MethodName
+			// 如果方法名以 "HookApproved" 结尾，不添加 suffix
+			if strings.HasSuffix(methodName, "HookApproved") {
+				return strings.TrimSuffix(methodName, "HookApproved") + suffix
+			}
+			return methodName + suffix
+		},
+		"getApprovedMethodName": func(method MyMethod) string {
+			return method.MethodName
+		},
+		"getRejectedMethodName": func(method MyMethod) string {
+			methodName := method.MethodName
+			// 如果方法名以 "HookApproved" 结尾，将后缀替换为 "HookRejected"
+			if strings.HasSuffix(methodName, "HookApproved") {
+				return strings.TrimSuffix(methodName, "HookApproved") + "HookRejected"
+			}
+			return methodName + "HookRejected"
+		},
+	}
+
+	tmpl, err := template.New("methodCallApprovalV2").Funcs(funcMap).Parse(methodCallApprovalTemplateV2)
+	if err != nil {
+		panic(fmt.Sprintf("解析模板失败: %v", err))
+	}
+
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, data); err != nil {
+		panic(fmt.Sprintf("执行模板失败: %v", err))
+	}
+
+	// 将生成的代码转换为 jen.Statement
+	code := jen.Id(buf.String())
+	return JenStatementSlice{code}
 }
 
 func genGlobalFunc(comment string, method *MyMethod, formatFunctionName func(name string) string, getNameFunc func(typ ast.Expr, imports xast2.ImportInfoSlice) string) jen.Code {
@@ -161,6 +306,8 @@ func genGlobalFunc(comment string, method *MyMethod, formatFunctionName func(nam
 var (
 	paths           = flag.String("path", "", "dir paths, separated by comma")
 	outputFileName_ = flag.String("out", "", "output filename")
+	version2        = flag.Bool("v2", false, "version2")
+	genMethods      = flag.Bool("methods", true, "generate CallMethodForApproval and CallMethodForApprovalHookRejected methods")
 )
 
 func main() {
@@ -229,7 +376,12 @@ func main() {
 			importMgr.AddImport(item)
 		}
 	}
-	importMgr.AddImport("github.com/bytedance/sonic")
+	if *genMethods {
+		importMgr.AddImport("github.com/bytedance/sonic")
+		if *version2 {
+			importMgr.AddImport("errors")
+		}
+	}
 	// 字段格式化方法
 	var formatFunctionBy = func(name string) string {
 		if len(name) == 0 {
@@ -368,7 +520,7 @@ func main() {
 			}
 			// 为对象结构体生成自定义方法
 			if info := methods.ParseFuncMethod(body); info != nil {
-				template, ok := funcTemplateMapping[info.Name]
+				tmplStr, ok := funcTemplateMapping[info.Name]
 				if !ok {
 					panic(fmt.Sprintf("func: %s 's template is not define", info.Name))
 				}
@@ -395,7 +547,7 @@ func main() {
 					}
 				}
 
-				methodCodes = append(methodCodes, info.Generator().Generate(template, method.ObjName, method.StructName, method.MethodName, methodArgNames, methodArgs, methodStructArgCode.GoString(), returnString))
+				methodCodes = append(methodCodes, info.Generator().Generate(tmplStr, method.ObjName, method.StructName, method.MethodName, methodArgNames, methodArgs, methodStructArgCode.GoString(), returnString))
 			}
 			// 生成hookRejected内容
 			if strings.HasPrefix(body, "func::hookRejected") {
@@ -413,15 +565,34 @@ func main() {
 	}
 
 	codes.Line()
-	m1 := GenMethodCallApproval("CallMethodForApproval", true, "", allMethods, "CodeUnmarshalFailed", "CodeUnknownMethod", false, func(typ ast.Expr, method MyMethod) string {
-		return getNameFunc(typ, method.Imports)
-	})
-	codes.Add(m1.As()...)
-	fmt.Println("-===============")
-	m2 := GenMethodCallApproval("CallMethodForApprovalHookRejected", false, "HookRejected", hookRejectedMethods, "CodeUnmarshalFailed", "CodeUnknownMethod", true, func(typ ast.Expr, method MyMethod) string {
-		return getNameFunc(typ, method.Imports)
-	})
-	codes.Add(m2.As()...)
+
+	// 根据命令行参数决定是否生成方法调用审批相关方法
+	if *genMethods {
+		if *version2 {
+			// 使用v2版本生成方法，需要传递 hookRejectedMethods 的信息
+			// 创建一个 map 来标记哪些方法支持 HookRejected
+			hookRejectedMap := make(map[string]bool)
+			for _, method := range hookRejectedMethods {
+				hookRejectedMap[method.GenMethod()] = true
+			}
+
+			m1 := GenMethodCallApprovalV2("CallMethodForApproval", true, "", allMethods, func(typ ast.Expr, method MyMethod) string {
+				return getNameFunc(typ, method.Imports)
+			}, false, hookRejectedMap)
+			codes.Add(m1.As()...)
+		} else {
+			// 使用v1版本生成方法
+			m1 := GenMethodCallApproval("CallMethodForApproval", true, "", allMethods, func(typ ast.Expr, method MyMethod) string {
+				return getNameFunc(typ, method.Imports)
+			}, false)
+			codes.Add(m1.As()...)
+			fmt.Println("-===============")
+			m2 := GenMethodCallApproval("CallMethodForApprovalHookRejected", false, "HookRejected", hookRejectedMethods, func(typ ast.Expr, method MyMethod) string {
+				return getNameFunc(typ, method.Imports)
+			}, true)
+			codes.Add(m2.As()...)
+		}
+	}
 
 	// 保存到当前工作目录
 	err := codes.Save(outputFileName)
