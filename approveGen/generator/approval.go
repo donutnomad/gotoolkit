@@ -19,7 +19,7 @@ func {{.GenMethodName}}(a *AllServices, ctx context.Context, method string, cont
 	case "{{.GenMethod}}":
 		var p {{.OutStructName}}
 		if err := sonic.Unmarshal([]byte(content), &p); err != nil {
-			return Fail[any]("CodeUnmarshalFailed")
+			return Fail[any](CodeUnmarshalFailed)
 		}
 		return a.{{nameWithoutPoint .StructName}}.{{.MethodName}}{{$.EveryMethodSuffix}}({{formatParams . $.GetType}}).ToAny()
 {{- end}}
@@ -27,7 +27,7 @@ func {{.GenMethodName}}(a *AllServices, ctx context.Context, method string, cont
 {{- if .DefaultSuccess}}
 		return Success[any](struct{}{})
 {{- else}}
-		return Fail[any]("CodeUnknownMethod")
+		return Fail[any](CodeUnknownMethod)
 {{- end}}
 	}
 }

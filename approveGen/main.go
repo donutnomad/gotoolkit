@@ -379,7 +379,7 @@ func main() {
 					}
 				}
 
-				methodCodes = append(methodCodes, info.Generator().Generate(tmplStr, method.ObjName, method.StructName, method.MethodName, methodArgNames, methodArgs, methodStructArgCode.GoString(), returnString))
+				methodCodes = append(methodCodes, info.Generator().Generate(tmplStr, method.ObjName, method.StructName, method.MethodName, methodArgNames, methodArgs, methodStructArgCode.GoString(), returnString, *version2))
 			}
 			// 生成hookRejected内容
 			if strings.HasPrefix(body, "func::hookRejected") {

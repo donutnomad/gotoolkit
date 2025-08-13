@@ -237,7 +237,33 @@ type FuncMethod struct {
 	MethodArg  string // Struct Method Args ==> &_AAAeMethodBBBB{}
 }
 
-func (m *FuncMethod) Generate(template, receiver, structName, methodName string, methodNames []string, methodArgCode string, methodStructArgCode string, returnArgsCode string) jen.Code {
+func (m *FuncMethod) Generate(template, receiver, structName, methodName string, methodNames []string, methodArgCode string, methodStructArgCode string, returnArgsCode string, v2 bool) jen.Code {
+	if !v2 {
+		m.Receiver = receiver
+		m.StructName = structName
+		methodName = m.Info.Name + "_" + methodName // ApproveFor_DDD
+		m.MethodArg = methodStructArgCode
+		m.Template = template
+
+		var code = jen.Empty()
+
+		code.Func().Params(jen.Id(receiver).Id(structName)).Id(methodName).Id(methodArgCode).Id(returnArgsCode).BlockFunc(func(group *jen.Group) {
+			group.Return().Id(utils.MustExecuteTemplate(m, m.Template))
+		}).Line()
+
+		if m.Info.Nest {
+			code.Func().Params(jen.Id(receiver).Id(structName)).Id(methodName + "Func").Id(methodArgCode).Id("func() " + returnArgsCode).BlockFunc(func(group *jen.Group) {
+				group.Return().Func().Id("()").Id(returnArgsCode).Block(jen.Return().Id(receiver).Dot(methodName).CallFunc(func(g *jen.Group) {
+					for _, name := range methodNames {
+						g.Id(name)
+					}
+				}))
+			}).Line()
+		}
+
+		return code
+	}
+
 	m.Receiver = receiver
 	m.StructName = structName
 	methodName = m.Info.Name + "_" + methodName // ApproveFor_DDD
