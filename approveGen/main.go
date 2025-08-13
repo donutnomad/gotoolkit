@@ -125,9 +125,24 @@ func main() {
 			return alias
 		})
 	}
+	// 检查是否有formatter方法，如果有就提前添加import
+	var formatterMethods types.MyMethodSlice
+	for _, method := range utils2.IterSortMap(methodsMap) {
+		bodies := lo.Must1(method.FindAnnoBody(AnnotationName))
+		formatterName := methods.ParseFormatterMethod(bodies)
+		if formatterName != "" {
+			formatterMethods = append(formatterMethods, method)
+		}
+	}
+
 	// 导入import
 	importMgr.AddImport("fmt")
 	importMgr.AddImport("strings")
+	// 如果有formatter方法，添加必要的导入
+	if len(formatterMethods) > 0 {
+		importMgr.AddImport("context")
+		importMgr.AddImport("errors")
+	}
 	for _, method := range utils2.IterSortMap(methodsMap) {
 		for _, item := range method.ExtractImportPath() {
 			importMgr.AddImport(item)
@@ -349,6 +364,53 @@ func main() {
 			}, true)
 			codes.Add(m2.As()...)
 		}
+	}
+
+	// 生成Formatter方法
+	if len(formatterMethods) > 0 {
+		codes.Line()
+		codes.Comment("========================== Formatter Method ==========================").Line()
+
+		formatterGen := methods.NewFormatterMethod()
+		for _, method := range formatterMethods {
+			bodies := lo.Must1(method.FindAnnoBody(AnnotationName))
+			formatterName := methods.ParseFormatterMethod(bodies)
+
+			// 如果没有指定formatter名称或者是DEFAULT，使用方法名
+			if formatterName == "" || formatterName == "DEFAULT" {
+				formatterName = method.MethodName
+			}
+
+			// 收集结构体字段信息
+			methodParams := lo.Filter(method.MethodParams, func(item *ast.Field, index int) bool {
+				for _, name := range item.Names {
+					if name.Name == "_" {
+						return false
+					}
+				}
+				return true
+			})
+
+			var fields []methods.FormatterFieldInfo
+			for _, param := range methodParams {
+				tn := getNameFunc(param.Type, method.Imports)
+				// 跳过context.Context类型
+				if isIgnoreType(tn) {
+					continue
+				}
+				// 添加每个字段
+				for _, name := range param.Names {
+					fields = append(fields, methods.FormatterFieldInfo{
+						Name: utils2.UpperCamelCase(name.Name),
+						Type: tn,
+					})
+				}
+			}
+
+			formatterGen.AddMethod(method.OutStructName(), method.MethodName, formatterName, fields)
+		}
+
+		codes.Add(formatterGen.Generate())
 	}
 
 	// 保存到当前工作目录
