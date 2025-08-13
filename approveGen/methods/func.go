@@ -8,19 +8,28 @@ import (
 	"github.com/dave/jennifer/jen"
 )
 
+// FuncMethodArg 存储函数参数信息
+type FuncMethodArg struct {
+	Name       string // 参数名称
+	Type       string // 参数类型
+	ImportPath string // 导入路径（如果需要）
+}
+
 // FuncMethodInfo 存储自定义函数方法的定义信息
 type FuncMethodInfo struct {
 	Name       string            // 函数名称
 	Attributes map[string]string // 自定义属性键值对
 	Nest       bool              // 是否嵌套
+	Args       []FuncMethodArg   // 自定义参数列表
 }
 
 // ParseFuncMethod 解析自定义函数方法的注解
 // 例子:
-// func:name="approveFor"; module="ABC"; event="EVENT"; nest=true
+// func:name="approveFor"; module="ABC"; event="EVENT"; nest=true; args=["name string", "codes github.com/donutnomad/gotoolkit/internal/utils#EString"]
 func ParseFuncMethod(content string) *FuncMethodInfo {
 	info := &FuncMethodInfo{
 		Attributes: make(map[string]string),
+		Args:       []FuncMethodArg{},
 	}
 
 	// 检查是否以func:开头
@@ -64,6 +73,14 @@ func ParseFuncMethod(content string) *FuncMethodInfo {
 			continue
 		}
 
+		// 特殊处理args数组
+		if strings.HasPrefix(part, "args=") {
+			if args := ParseArgsArray(part); len(args) > 0 {
+				info.Args = args
+			}
+			continue
+		}
+
 		// 解析键值对
 		keyValue := regexp.MustCompile(`(.*?)="(.*?)"`).FindStringSubmatch(part)
 		if len(keyValue) > 2 {
@@ -85,6 +102,124 @@ func ParseFuncMethod(content string) *FuncMethodInfo {
 	}
 
 	return info
+}
+
+// ParseArgsArray 解析args数组
+// 支持格式: args=["name string", "codes github.com/donutnomad/gotoolkit/internal/utils#EString"]
+func ParseArgsArray(argsStr string) []FuncMethodArg {
+	var args []FuncMethodArg
+
+	// 提取数组内容
+	arrayMatch := regexp.MustCompile(`args=\[(.*?)\]`).FindStringSubmatch(argsStr)
+	if len(arrayMatch) < 2 {
+		return args
+	}
+
+	arrayContent := arrayMatch[1]
+	if arrayContent == "" {
+		return args
+	}
+
+	// 解析数组元素，支持引号包围的字符串
+	elements := parseArrayElements(arrayContent)
+
+	for _, element := range elements {
+		if arg := parseArgElement(element); arg != nil {
+			args = append(args, *arg)
+		}
+	}
+
+	return args
+}
+
+// parseArrayElements 解析数组元素，处理引号包围的字符串
+func parseArrayElements(content string) []string {
+	var elements []string
+	var current strings.Builder
+	inQuotes := false
+	escaped := false
+
+	for i, r := range content {
+		if escaped {
+			current.WriteRune(r)
+			escaped = false
+			continue
+		}
+
+		if r == '\\' {
+			escaped = true
+			current.WriteRune(r)
+			continue
+		}
+
+		if r == '"' {
+			inQuotes = !inQuotes
+			current.WriteRune(r)
+			// 如果是最后一个字符且退出引号，保存元素
+			if i == len(content)-1 && !inQuotes {
+				if element := strings.TrimSpace(current.String()); element != "" {
+					elements = append(elements, element)
+				}
+			}
+			continue
+		}
+
+		if r == ',' && !inQuotes {
+			if element := strings.TrimSpace(current.String()); element != "" {
+				elements = append(elements, element)
+			}
+			current.Reset()
+			continue
+		}
+
+		current.WriteRune(r)
+
+		// 如果是最后一个字符且不在引号内，添加到结果中
+		if i == len(content)-1 && !inQuotes {
+			if element := strings.TrimSpace(current.String()); element != "" {
+				elements = append(elements, element)
+			}
+		}
+	}
+
+	return elements
+}
+
+// parseArgElement 解析单个参数元素
+// 支持格式: "name string" 或 "codes github.com/donutnomad/gotoolkit/internal/utils#EString"
+func parseArgElement(element string) *FuncMethodArg {
+	// 移除引号
+	element = strings.Trim(element, `"`)
+	if element == "" {
+		return nil
+	}
+
+	// 解析参数名和类型
+	parts := strings.Fields(element)
+	if len(parts) < 2 {
+		return nil
+	}
+
+	arg := &FuncMethodArg{
+		Name: parts[0],
+	}
+
+	// 解析类型和可能的导入路径
+	typeWithImport := parts[1]
+	if strings.Contains(typeWithImport, "#") {
+		// 格式: github.com/donutnomad/gotoolkit/internal/utils#EString
+		importParts := strings.Split(typeWithImport, "#")
+		if len(importParts) == 2 {
+			arg.ImportPath = importParts[0]
+			arg.Type = importParts[1]
+		} else {
+			arg.Type = typeWithImport
+		}
+	} else {
+		arg.Type = typeWithImport
+	}
+
+	return arg
 }
 
 func (info *FuncMethodInfo) Generator() *FuncMethod {
@@ -114,7 +249,10 @@ func (m *FuncMethod) Generate(template, receiver, structName, methodName string,
 	// 解析返回值类型，分析是否需要处理返回值不匹配的情况
 	needsErrorHandling := m.needsReturnValueHandling(returnArgsCode)
 
-	code.Func().Params(jen.Id(receiver).Id(structName)).Id(methodName).Id(methodArgCode).Id(returnArgsCode).BlockFunc(func(group *jen.Group) {
+	// 构建方法参数
+	methodParams := m.buildMethodParams(methodArgCode)
+
+	code.Func().Params(jen.Id(receiver).Id(structName)).Id(methodName).Add(methodParams).Id(returnArgsCode).BlockFunc(func(group *jen.Group) {
 		if needsErrorHandling {
 			// 生成错误处理逻辑：调用模板，然后返回默认值和error
 			group.Id("err := ").Id(utils.MustExecuteTemplate(m, m.Template))
@@ -126,9 +264,11 @@ func (m *FuncMethod) Generate(template, receiver, structName, methodName string,
 	}).Line()
 
 	if m.Info.Nest {
-		code.Func().Params(jen.Id(receiver).Id(structName)).Id(methodName + "Func").Id(methodArgCode).Id("func() " + returnArgsCode).BlockFunc(func(group *jen.Group) {
+		code.Func().Params(jen.Id(receiver).Id(structName)).Id(methodName + "Func").Add(methodParams).Id("func() " + returnArgsCode).BlockFunc(func(group *jen.Group) {
+			// 合并原始参数名和自定义参数名
+			allParams := append(methodNames, m.getArgNames()...)
 			group.Return().Func().Id("()").Id(returnArgsCode).Block(jen.Return().Id(receiver).Dot(methodName).CallFunc(func(g *jen.Group) {
-				for _, name := range methodNames {
+				for _, name := range allParams {
 					g.Id(name)
 				}
 			}))
@@ -232,4 +372,55 @@ func (m *FuncMethod) getDefaultValue(typeName string) string {
 		// 对于其他类型（如接口、结构体、切片、map等），返回nil
 		return "*new(" + typeName + ")"
 	}
+}
+
+// buildMethodParams 构建方法参数
+func (m *FuncMethod) buildMethodParams(originalMethodArgCode string) jen.Code {
+	// 如果没有自定义参数，直接返回原始参数
+	if len(m.Info.Args) == 0 {
+		if originalMethodArgCode == "" {
+			return jen.Params()
+		}
+		return jen.Id(originalMethodArgCode)
+	}
+
+	// 如果没有原始参数，只有自定义参数
+	if originalMethodArgCode == "" {
+		return jen.ParamsFunc(func(g *jen.Group) {
+			for _, arg := range m.Info.Args {
+				if arg.ImportPath != "" {
+					g.Id(arg.Name).Qual(arg.ImportPath, arg.Type)
+				} else {
+					g.Id(arg.Name).Id(arg.Type)
+				}
+			}
+		})
+	}
+
+	// 合并原始参数和自定义参数
+	return jen.ParamsFunc(func(g *jen.Group) {
+		// 添加原始参数（去掉括号）
+		originalParams := strings.Trim(originalMethodArgCode, "()")
+		if originalParams != "" {
+			g.Id(originalParams)
+		}
+
+		// 添加自定义参数
+		for _, arg := range m.Info.Args {
+			if arg.ImportPath != "" {
+				g.Id(arg.Name).Qual(arg.ImportPath, arg.Type)
+			} else {
+				g.Id(arg.Name).Id(arg.Type)
+			}
+		}
+	})
+}
+
+// getArgNames 获取自定义参数名列表
+func (m *FuncMethod) getArgNames() []string {
+	var names []string
+	for _, arg := range m.Info.Args {
+		names = append(names, arg.Name)
+	}
+	return names
 }

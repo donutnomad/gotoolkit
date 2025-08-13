@@ -26,6 +26,49 @@ import (
 
 const AnnotationName = "Approve"
 
+// GlobalTemplateInfo 全局模板信息
+type GlobalTemplateInfo struct {
+	FuncName string
+	Template string
+	Args     []methods.FuncMethodArg
+}
+
+// parseGlobalTemplate 解析全局模板，支持分离的template和args定义
+// 支持格式:
+// 1. global::template="ApproveFor=模板内容"
+// 2. global::template="ApproveFor::args=[参数列表]"
+func parseGlobalTemplate(comment string) GlobalTemplateInfo {
+	info := GlobalTemplateInfo{}
+
+	// 移除 global::template= 前缀
+	content := strings.TrimPrefix(comment, "global::template=")
+	content = strings.Trim(content, "\"")
+
+	// 检查是否是args定义
+	if strings.Contains(content, "::args=") {
+		// args定义格式: "ApproveFor::args=[...]"
+		parts := strings.Split(content, "::args=")
+		if len(parts) >= 2 {
+			info.FuncName = parts[0]
+
+			// 解析args数组
+			argsStr := "args=" + parts[1]
+			// 移除转义字符
+			argsStr = strings.ReplaceAll(argsStr, "\\\"", "\"")
+			info.Args = methods.ParseArgsArray(argsStr)
+		}
+	} else {
+		// 模板定义格式: "ApproveFor=模板内容"
+		parts := strings.SplitN(content, "=", 2)
+		if len(parts) >= 2 {
+			info.FuncName = parts[0]
+			info.Template = parts[1]
+		}
+	}
+
+	return info
+}
+
 func genGlobalFunc(comment string, method *MyMethod, formatFunctionName func(name string) string, getNameFunc func(typ ast.Expr, imports xast2.ImportInfoSlice) string) jen.Code {
 	// Extract function name from comment
 	funcName := strings.Trim(strings.Split(comment, "=")[1], "\"")
@@ -183,6 +226,7 @@ func main() {
 	// 生成字段格式化方法
 	// 获取func的template定义
 	var funcTemplateMapping = make(map[string]string)
+	var funcGlobalArgsMapping = make(map[string][]methods.FuncMethodArg) // 新增：全局args映射
 	for _, method := range utils2.IterSortMap(notStructMethods.ToMap()) {
 		comments := lo.Must1(method.FindAnnoBody(AnnotationName))
 		for _, comment := range comments {
@@ -191,10 +235,18 @@ func main() {
 				fmt.Println("Global Function:", comments, method.PkgPath, method.MethodName)
 				codes.Add(genGlobalFunc(comment, &method, formatFunctionBy, getNameFunc))
 			case strings.HasPrefix(comment, "global::template"):
-				parts := strings.Split(comment, "=")
-				funcName := strings.Trim(parts[1], "\"")
-				funcTemplate := strings.Trim(parts[2], "\"")
-				funcTemplateMapping[funcName] = funcTemplate
+				// 解析全局模板，支持分离的template和args定义
+				templateInfo := parseGlobalTemplate(comment)
+
+				// 如果是模板定义，存储到模板映射
+				if templateInfo.Template != "" {
+					funcTemplateMapping[templateInfo.FuncName] = templateInfo.Template
+				}
+
+				// 如果是args定义，存储到args映射
+				if len(templateInfo.Args) > 0 {
+					funcGlobalArgsMapping[templateInfo.FuncName] = templateInfo.Args
+				}
 			}
 		}
 	}
@@ -296,6 +348,14 @@ func main() {
 				if !ok {
 					panic(fmt.Sprintf("func: %s 's template is not define", info.Name))
 				}
+
+				// 如果当前func没有定义args，使用全局args
+				if len(info.Args) == 0 {
+					if globalArgs, hasGlobalArgs := funcGlobalArgsMapping[info.Name]; hasGlobalArgs {
+						info.Args = globalArgs
+					}
+				}
+
 				var returnString = genMethodParamsString(method.MethodResults, true, getNameFunc2)
 
 				// 结构体定义, 不要存储context.Context

@@ -22,6 +22,7 @@ func TestParseFuncMethod(t *testing.T) {
 					"module": "ABC",
 					"event":  "EVENT",
 				},
+				Args: []FuncMethodArg{},
 			},
 		},
 		{
@@ -30,6 +31,7 @@ func TestParseFuncMethod(t *testing.T) {
 			expected: &FuncMethodInfo{
 				Name:       "validateData",
 				Attributes: map[string]string{},
+				Args:       []FuncMethodArg{},
 			},
 		},
 		{
@@ -43,6 +45,47 @@ func TestParseFuncMethod(t *testing.T) {
 					"priority": "HIGH",
 					"async":    "true",
 				},
+				Args: []FuncMethodArg{},
+			},
+		},
+		{
+			name:    "带简单args参数",
+			content: `func:name="approveFor"; args=["name string", "age int"]`,
+			expected: &FuncMethodInfo{
+				Name:       "approveFor",
+				Attributes: map[string]string{},
+				Args: []FuncMethodArg{
+					{Name: "name", Type: "string"},
+					{Name: "age", Type: "int"},
+				},
+			},
+		},
+		{
+			name:    "带导入路径的args参数",
+			content: `func:name="approveFor"; args=["name string", "codes github.com/donutnomad/gotoolkit/internal/utils#EString"]`,
+			expected: &FuncMethodInfo{
+				Name:       "approveFor",
+				Attributes: map[string]string{},
+				Args: []FuncMethodArg{
+					{Name: "name", Type: "string"},
+					{Name: "codes", Type: "EString", ImportPath: "github.com/donutnomad/gotoolkit/internal/utils"},
+				},
+			},
+		},
+		{
+			name:    "完整功能测试",
+			content: `func:name="approveFor"; module="ABC"; event="EVENT"; nest=true; args=["name string", "codes github.com/donutnomad/gotoolkit/internal/utils#EString"]`,
+			expected: &FuncMethodInfo{
+				Name: "approveFor",
+				Attributes: map[string]string{
+					"module": "ABC",
+					"event":  "EVENT",
+				},
+				Nest: true,
+				Args: []FuncMethodArg{
+					{Name: "name", Type: "string"},
+					{Name: "codes", Type: "EString", ImportPath: "github.com/donutnomad/gotoolkit/internal/utils"},
+				},
 			},
 		},
 		{
@@ -54,6 +97,7 @@ func TestParseFuncMethod(t *testing.T) {
 					"path":   "/api/v1",
 					"method": "POST",
 				},
+				Args: []FuncMethodArg{},
 			},
 		},
 		{
@@ -79,6 +123,7 @@ func TestParseFuncMethod(t *testing.T) {
 
 			assert.NotNil(t, result)
 			assert.Equal(t, tt.expected.Name, result.Name)
+			assert.Equal(t, tt.expected.Nest, result.Nest)
 
 			// 验证属性
 			assert.Equal(t, len(tt.expected.Attributes), len(result.Attributes))
@@ -86,6 +131,17 @@ func TestParseFuncMethod(t *testing.T) {
 				actualValue, exists := result.Attributes[key]
 				assert.True(t, exists, "属性 %s 应该存在", key)
 				assert.Equal(t, expectedValue, actualValue, "属性 %s 的值应该是 %s，但得到了 %s", key, expectedValue, actualValue)
+			}
+
+			// 验证Args
+			assert.Equal(t, len(tt.expected.Args), len(result.Args), "Args数量不匹配")
+			for i, expectedArg := range tt.expected.Args {
+				if i < len(result.Args) {
+					actualArg := result.Args[i]
+					assert.Equal(t, expectedArg.Name, actualArg.Name, "参数%d名称不匹配", i)
+					assert.Equal(t, expectedArg.Type, actualArg.Type, "参数%d类型不匹配", i)
+					assert.Equal(t, expectedArg.ImportPath, actualArg.ImportPath, "参数%d导入路径不匹配", i)
+				}
 			}
 		})
 	}
