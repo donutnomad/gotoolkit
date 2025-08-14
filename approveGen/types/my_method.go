@@ -1,13 +1,13 @@
 package types
 
 import (
-	"errors"
 	"fmt"
+	"go/ast"
+	"strings"
+
 	utils2 "github.com/donutnomad/gotoolkit/internal/utils"
 	xast2 "github.com/donutnomad/gotoolkit/internal/xast"
 	"github.com/samber/lo"
-	"go/ast"
-	"strings"
 )
 
 type MyMethodSlice []MyMethod
@@ -108,8 +108,8 @@ func (m *MyMethod) FindAnnoBody(name string) ([]string, error) {
 		if len(comment) < 2 {
 			continue
 		}
-		if comment[0] != '(' && comment[len(comment)] != ')' {
-			return nil, errors.New("invalid syntax")
+		if comment[0] != '(' && comment[len(comment)-1] != ')' {
+			return nil, fmt.Errorf("invalid syntax %s", m.Comment)
 		}
 		comment = strings.TrimSpace(comment[1 : len(comment)-1])
 		if len(comment) == 0 {
