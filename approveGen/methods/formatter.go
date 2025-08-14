@@ -134,13 +134,14 @@ func (f *FormatterMethod) Generate() jen.Code {
 	// 生成Format函数
 	formatFunc := jen.Func().Id("Format").Params(
 		jen.Id("ctx").Qual("", "context.Context"),
+		jen.Id("arg").Qual("", "any"),
 		jen.Id("formatter").Any(),
 	).Params(
 		jen.Any(),
 		jen.Error(),
 	).BlockFunc(func(g *jen.Group) {
 		// 生成 switch 语句
-		g.Switch(jen.Id("v").Op(":=").Id("formatter").Op(".").Params(jen.Id("type"))).BlockFunc(func(switchGroup *jen.Group) {
+		g.Switch(jen.Id("v").Op(":=").Id("arg").Op(".").Params(jen.Id("type"))).BlockFunc(func(switchGroup *jen.Group) {
 			// 为每个方法结构体生成一个 case
 			for _, methodStruct := range f.Info.MethodStructs {
 				formatMethodName := methodStruct.CustomName
