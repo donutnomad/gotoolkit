@@ -2,14 +2,15 @@ package main
 
 import (
 	"fmt"
-	"github.com/donutnomad/gotoolkit/internal/utils"
-	parsers "github.com/donutnomad/gotoolkit/swagGen/parser"
-	"github.com/samber/lo"
-	"golang.org/x/exp/maps"
 	"regexp"
 	"slices"
 	"sort"
 	"strings"
+
+	"github.com/donutnomad/gotoolkit/internal/utils"
+	parsers "github.com/donutnomad/gotoolkit/swagGen/parser"
+	"github.com/samber/lo"
+	"golang.org/x/exp/maps"
 )
 
 // convertPathToGinFormat 将 Swagger 路径格式 {param} 转换为 Gin 路径格式 :param
@@ -499,8 +500,8 @@ func (g *GinGenerator) generateResponseHandling(method SwaggerMethod, methodCall
 	}
 
 	// 普通返回值 - 使用 result 避免与请求参数 data 冲突
-	return fmt.Sprintf(`var result %s = %s
-        onGinResponse(ctx, result)`, method.ResponseType.FullName, methodCall)
+	return fmt.Sprintf(`result, err := %s
+        onGinResponse[%s](ctx, result, err)`, methodCall, method.ResponseType.FullName)
 }
 
 // isErrorType 检查是否是错误类型
@@ -564,7 +565,7 @@ func onGinBind(c *gin.Context, val any, typ string) bool {
     return true
 }
 
-func onGinResponse[T any](c *gin.Context, data T) {
+func onGinResponse(c *gin.Context, data any, err error) {
     c.JSON(200, data)
 }
 
