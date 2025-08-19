@@ -269,7 +269,8 @@ func (a *{{.WrapperName}}) {{.BindMethodName}}(router gin.IRoutes, preHandlers .
 	var handlers []gin.HandlerFunc
 	if a.handler != nil {
 		handlers = append(handlers, a.handler.PreHandlers()...)
-		{{range $.Handlers}}handlers = append(handlers, a.handler.{{.}}()...){{end}}
+		{{range $.Handlers}}handlers = append(handlers, a.handler.{{.}}()...)
+		{{end -}}
 	}
 	a.bind(router, "{{$.HTTPMethod}}", "{{.}}", preHandlers, handlers, a.{{$.HandlerMethodName}}){{end}}
 }
