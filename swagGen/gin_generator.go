@@ -94,8 +94,9 @@ func (g *GinGenerator) GenerateGinCode(comments map[string]string) (constructCod
 			sort.Strings(items)
 
 			handlerInterface = append(handlerInterface, fmt.Sprintf("type %s interface {", handlerItfName))
+			handlerInterface = append(handlerInterface, fmt.Sprintf("%s() []gin.HandlerFunc", "PreHandlers"))
 			for _, key := range items {
-				handlerInterface = append(handlerInterface, fmt.Sprintf("%s() gin.HandlerFunc", key))
+				handlerInterface = append(handlerInterface, fmt.Sprintf("%s() []gin.HandlerFunc", key))
 			}
 			handlerInterface = append(handlerInterface, "}")
 			handlerInterface = append(handlerInterface, "\n")
@@ -267,10 +268,8 @@ func (g *GinGenerator) generateMethodBinding(iface SwaggerInterface, method Swag
 func (a *{{.WrapperName}}) {{.BindMethodName}}(router gin.IRoutes, preHandlers ...gin.HandlerFunc) { {{- range .GinPath}}
 	var handlers []gin.HandlerFunc
 	if a.handler != nil {
-		handlers = []gin.HandlerFunc{
-			{{range $.Handlers}}a.handler.{{.}}(),
-			{{end}}
-		}
+		handlers = append(handlers, a.handler.PreHandlers()...)
+		{{range $.Handlers}}handlers = append(handlers, a.handler.{{.}}()...){{end}}
 	}
 	a.bind(router, "{{$.HTTPMethod}}", "{{.}}", preHandlers, handlers, a.{{$.HandlerMethodName}}){{end}}
 }
