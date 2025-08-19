@@ -4,15 +4,16 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
-	"github.com/donutnomad/gotoolkit/internal/xast"
-	parsers "github.com/donutnomad/gotoolkit/swagGen/parser"
-	"github.com/samber/lo"
 	"go/ast"
 	"go/parser"
 	"go/token"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/donutnomad/gotoolkit/internal/xast"
+	parsers "github.com/donutnomad/gotoolkit/swagGen/parser"
+	"github.com/samber/lo"
 )
 
 // NewInterfaceParser 创建接口解析器
@@ -221,7 +222,7 @@ func (p *InterfaceParser) parseInterfaceMethods(interfaceType *ast.InterfaceType
 		// 解析方法注释和定义
 		swaggerMethod, err := annotationParser.ParseMethodAnnotations(virtualFunc)
 		if err != nil {
-			continue // 解析失败的方法跳过
+			panic(err)
 		}
 
 		// 如果没有找到 Swagger 注释，跳过

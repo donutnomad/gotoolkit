@@ -159,3 +159,10 @@ type ExcludeFromBindAll struct {
 
 func (s ExcludeFromBindAll) Name() string    { return "ExcludeFromBindAll" }
 func (s ExcludeFromBindAll) Mode() ParseMode { return ModePositional }
+
+type Raw struct {
+	Value string `sg:"required"`
+}
+
+func (s Raw) Name() string    { return "Raw" }
+func (s Raw) Mode() ParseMode { return ModePositional }

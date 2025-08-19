@@ -2,10 +2,11 @@ package main
 
 import (
 	"fmt"
-	parsers "github.com/donutnomad/gotoolkit/swagGen/parser"
-	"github.com/samber/lo"
 	"slices"
 	"strings"
+
+	parsers "github.com/donutnomad/gotoolkit/swagGen/parser"
+	"github.com/samber/lo"
 )
 
 // NewSwaggerGenerator 创建 Swagger 生成器
@@ -148,6 +149,10 @@ func (g *SwaggerGenerator) generateMethodComments(method SwaggerMethod, iface Sw
 	// Parameters
 	paramLines := g.generateParameterComments(method, method.Parameters, iface.CommonDef, method.Def)
 	lines = append(lines, paramLines...)
+
+	for _, md := range CollectDef[*parsers.Raw](method.Def) {
+		lines = append(lines, fmt.Sprintf("// %s", md.Value))
+	}
 
 	// Success response
 	successLine := g.generateSuccessComment(method.ResponseType)
