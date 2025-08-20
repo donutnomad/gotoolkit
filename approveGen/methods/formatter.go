@@ -2,8 +2,9 @@ package methods
 
 import (
 	"fmt"
-	"github.com/dave/jennifer/jen"
 	"strings"
+
+	"github.com/dave/jennifer/jen"
 )
 
 // FormatterMethodInfo 存储Formatter方法的定义信息
@@ -63,18 +64,12 @@ func (f *FormatterMethod) Generate() jen.Code {
 		structGroups[baseName] = append(structGroups[baseName], methodStruct)
 	}
 
-	// 关闭生成
-	var generateStructGroup = false
-	if !generateStructGroup {
-		structGroups = nil
-	}
-
 	// 生成代码片段
 	var statements []jen.Code
 
 	// 为每个结构体生成接口
 	for baseName, methods := range structGroups {
-		interfaceName := fmt.Sprintf("_%sFormatterInterface", baseName)
+		interfaceName := fmt.Sprintf("%sFormatterInterface", baseName)
 
 		// 收集唯一的方法名
 		uniqueMethods := make(map[string]bool)
