@@ -128,7 +128,7 @@ func printUsage() {
     @TAG(Company;exclude="StartTransfer")     - 为所有方法添加标签，但排除 StartTransfer
     @SECURITY(ApiKeyAuth;exclude="method1,method2") - 为所有方法添加安全认证，但排除指定方法
 
-`, os.Args[0], os.Args[0], os.Args[0], os.Args[0])
+`, os.Args[0], os.Args[0], os.Args[0], os.Args[0], os.Args[0])
 }
 
 func init() {

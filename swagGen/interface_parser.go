@@ -277,17 +277,19 @@ func (p *InterfaceParser) parseParameterAnnotations(fileSet *token.FileSet, file
 func (p *InterfaceParser) extractBaseParameters(fields []*ast.Field, paramAnnotations []parsers.Parameter, typeParser *ReturnTypeParser, annotationParser *AnnotationParser) []Parameter {
 	var allParams []Parameter
 
-	for _, field := range fields {
+	// 直接按位置一一对应映射参数
+	for i, field := range fields {
 		paramType := typeParser.ParseParameterType(field.Type)
-		fullType := xast.GetFieldType(field.Type, nil) // example: *gin.Context
 
-		for _, item := range paramAnnotations {
-			if item.Type == fullType {
-				parameter := annotationParser.ParseParameterAnnotations(item.Name, item.Tag)
-				parameter.Type = paramType
-				allParams = append(allParams, parameter)
-			}
+		// 如果有对应位置的paramAnnotation，则使用它
+		if i < len(paramAnnotations) {
+			annotation := paramAnnotations[i]
+			parameter := annotationParser.ParseParameterAnnotations(annotation.Name, annotation.Tag)
+			parameter.Type = paramType
+			allParams = append(allParams, parameter)
 		}
+		// 如果没有对应的注解，创建默认参数（这不应该发生，但作为备用）
+		// 这里跳过，因为parseParameterAnnotations应该总是产生与fields相同数量的annotations
 	}
 
 	return allParams

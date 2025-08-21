@@ -324,6 +324,8 @@ func (g *GinGenerator) generateParameterBinding(iface SwaggerInterface, method S
 			lines = append(lines, g.generateHeaderParamBinding(param))
 			continue
 		}
+
+		// 只有当参数不是路径参数和header参数时，且是最后一个参数时，才作为body/query参数处理
 		if i == len(method.Parameters)-1 {
 			// 默认的
 			if method.GetHTTPMethod() == "GET" {
