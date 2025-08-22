@@ -157,6 +157,7 @@ func newTagParserSafe() (*parsers.Parser, error) {
 		parsers.Removed{},
 		parsers.ExcludeFromBindAll{},
 		parsers.Raw{},
+		parsers.Prefix{},
 	)
 
 	return parser, err

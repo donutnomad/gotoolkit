@@ -158,9 +158,11 @@ func (g *SwaggerGenerator) generateMethodComments(method SwaggerMethod, iface Sw
 	successLine := g.generateSuccessComment(method.ResponseType)
 	lines = append(lines, successLine)
 
+	prefix := iface.CommonDef.GetPrefix()
+
 	// Router
 	for _, pathRouter := range method.GetPaths() {
-		lines = append(lines, fmt.Sprintf("// @Router %s [%s]", pathRouter, strings.ToLower(method.GetHTTPMethod())))
+		lines = append(lines, fmt.Sprintf("// @Router %s [%s]", prefix+pathRouter, strings.ToLower(method.GetHTTPMethod())))
 	}
 
 	return lines

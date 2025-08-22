@@ -2,9 +2,10 @@ package main
 
 import (
 	"fmt"
+	"go/token"
+
 	"github.com/donutnomad/gotoolkit/internal/xast"
 	parsers "github.com/donutnomad/gotoolkit/swagGen/parser"
-	"go/token"
 )
 
 // TypeInfo 表示类型信息
@@ -66,6 +67,17 @@ func FindDef[T any](inputs ...DefSlice) bool {
 }
 
 type DefSlice []parsers.Definition
+
+func (s DefSlice) GetPrefix() string {
+	for _, item := range s {
+		switch v := item.(type) {
+		case *parsers.Prefix:
+			return v.Value
+		default:
+		}
+	}
+	return ""
+}
 
 func (s DefSlice) IsRemoved() bool {
 	return FindDef[*parsers.Removed](s)

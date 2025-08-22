@@ -166,3 +166,10 @@ type Raw struct {
 
 func (s Raw) Name() string    { return "Raw" }
 func (s Raw) Mode() ParseMode { return ModePositional }
+
+type Prefix struct {
+	Value string `sg:"required"`
+}
+
+func (s Prefix) Name() string    { return "PREFIX" }
+func (s Prefix) Mode() ParseMode { return ModePositional }
