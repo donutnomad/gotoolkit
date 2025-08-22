@@ -32,6 +32,7 @@ func (p *InterfaceParser) SetConfig(config *GenerationConfig) {
 // getContent 从文件的指定位置提取内容
 // 根据 token.Position 提供的行列信息，从文件内容中提取指定范围的文本
 // 这个函数主要用于提取参数注释，因为 Go AST 不支持解析参数间的注释
+// 输出示例: (c *gin.Context, date, filename string)
 func getContent(fileContent []byte, start, end token.Position) string {
 	reader := bufio.NewScanner(bytes.NewReader(fileContent))
 	var lineNum int
@@ -189,8 +190,9 @@ func (p *InterfaceParser) parseInterfaceComments(genDecl *ast.GenDecl, swaggerIn
 			if strings.HasPrefix(line, "@") {
 				parse, err := ps.Parse(line)
 				if err != nil {
-					return NewParseError("interface comment parsing failed",
-						fmt.Sprintf("failed to parse comment '%s' in interface %s", line, swaggerInterface.Name), err)
+					msg := fmt.Sprintf("failed to parse comment '%s' in interface %s", line, swaggerInterface.Name)
+					fmt.Println(msg)
+					return NewParseError("interface comment parsing failed", msg, err)
 				}
 				swaggerInterface.CommonDef = append(swaggerInterface.CommonDef, parse.(parsers.Definition))
 			}
@@ -276,9 +278,47 @@ func (p *InterfaceParser) parseParameterAnnotations(fileSet *token.FileSet, file
 // extractBaseParameters 提取基础参数信息
 func (p *InterfaceParser) extractBaseParameters(fields []*ast.Field, paramAnnotations []parsers.Parameter, typeParser *ReturnTypeParser, annotationParser *AnnotationParser) []Parameter {
 	var allParams []Parameter
+	// 原来的代码
+	//for _, field := range fields {
+	//	paramType := typeParser.ParseParameterType(field.Type)
+	//	fullType := xast.GetFieldType(field.Type, nil) // example: *gin.Context
+	//
+	//	for _, item := range paramAnnotations {
+	//		if item.Type == fullType {
+	//			parameter := annotationParser.ParseParameterAnnotations(item.Name, item.Tag)
+	//			parameter.Type = paramType
+	//			allParams = append(allParams, parameter)
+	//		}
+	//	}
+	//}
 
-	// 直接按位置一一对应映射参数
-	for i, field := range fields {
+	// 将共用一个Names的fields扩展开
+	// 例如: (date, filename string)
+	// (*ast.Field)(0xc000243a00)({
+	//  Doc: (*ast.CommentGroup)(<nil>),
+	//  Names: ([]*ast.Ident) (len=2 cap=2) {
+	//   (*ast.Ident)(0xc000245600)(date),
+	//   (*ast.Ident)(0xc000245620)(filename)
+	//  },
+	//  Type: (*ast.Ident)(0xc000245640)(string),
+	//  Tag: (*ast.BasicLit)(<nil>),
+	//  Comment: (*ast.CommentGroup)(<nil>)
+	// })
+
+	var newFields []*ast.Field
+	for _, field := range fields {
+		for _, name := range field.Names {
+			newFields = append(newFields, &ast.Field{
+				Doc:     field.Doc,
+				Names:   []*ast.Ident{name}, // 使用单个名称
+				Type:    field.Type,
+				Tag:     field.Tag,
+				Comment: field.Comment,
+			})
+		}
+	}
+
+	for i, field := range newFields {
 		paramType := typeParser.ParseParameterType(field.Type)
 
 		// 如果有对应位置的paramAnnotation，则使用它
@@ -344,9 +384,9 @@ func (p *InterfaceParser) processPathParams(routerPath string, pathParams []Para
 			allParams[paramIndex].PathName = pathParam.Name
 			allParams[paramIndex].Source = ParamSourcePath
 		} else {
-			// 记录警告而不是中断程序
-			fmt.Printf("warning: parameter `%s` not found in path %s, please use @PARAM(%s) annotation to fix\n",
-				routerPath, pathParam.Name, pathParam.Name)
+			msg := fmt.Sprintf("warning: parameter `%s` not found in path %s, please use @PARAM(%s) annotation to fix\n",
+				pathParam.Name, routerPath, pathParam.Name)
+			panic(msg)
 		}
 	}
 }
@@ -374,8 +414,6 @@ func (p *InterfaceParser) findMatchingParameter(pathParam Parameter, allParams [
 
 	return -1
 }
-
-var clean = strings.NewReplacer("\t", " ", "\n", " ")
 
 // parseMethodReturnType 解析方法返回类型
 func (p *InterfaceParser) parseMethodReturnType(swaggerMethod *SwaggerMethod, funcType *ast.FuncType, typeParser *ReturnTypeParser) {
