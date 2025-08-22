@@ -45,6 +45,7 @@ func splitTopLevel(input string) []string {
 
 // ParseParameters 解析函数参数定义字符串
 // 支持 // TAG name type, /* TAG */ name type, 以及 name, anotherName type 等格式
+// 输入示例: (c *gin.Context, date, filename string)
 func ParseParameters(rawInput string) ([]Parameter, error) {
 	// 1. 预处理输入字符串
 	content := strings.TrimSpace(rawInput)

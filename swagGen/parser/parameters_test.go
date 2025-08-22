@@ -89,10 +89,22 @@ func TestParseParameters(t *testing.T) {
 	input6 := "(ctx *gin.Context, name, filename string, age int)"
 	params1, err1 := ParseParameters(input6)
 	if err1 != nil {
-		t.Fatal(err)
+		t.Fatal(err1)
 	} else {
 		fmt.Println("解析结果1:")
 		for _, p := range params1 {
+			fmt.Printf("  - Name: %s, Type: %s, Tag: '%s'\n", p.Name, p.Type, p.Tag)
+		}
+	}
+
+	fmt.Println("测试用例7")
+	input7 := "(c *gin.Context, date, filename string)"
+	params2, err2 := ParseParameters(input7)
+	if err2 != nil {
+		t.Fatal(err2)
+	} else {
+		fmt.Println("解析结果1:")
+		for _, p := range params2 {
 			fmt.Printf("  - Name: %s, Type: %s, Tag: '%s'\n", p.Name, p.Type, p.Tag)
 		}
 	}

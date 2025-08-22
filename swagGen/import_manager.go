@@ -2,11 +2,12 @@ package main
 
 import (
 	"fmt"
-	"github.com/donutnomad/gotoolkit/internal/xast"
-	"github.com/samber/lo"
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/donutnomad/gotoolkit/internal/xast"
+	"github.com/samber/lo"
 )
 
 // NewEnhancedImportManager 创建增强的导入管理器

@@ -245,6 +245,7 @@ func (g *GinGenerator) generateMethodBinding(iface SwaggerInterface, method Swag
 	wrapperName := iface.GetWrapperName()
 	bindMethodName := fmt.Sprintf("Bind%s", method.Name)
 	handlerMethodName := method.Name
+	prefix := iface.CommonDef.GetPrefix()
 
 	//	if method.Def.IsRemoved() || method.Def.IsExcludeFromBindAll() {
 	//		template := `
@@ -260,7 +261,7 @@ func (g *GinGenerator) generateMethodBinding(iface SwaggerInterface, method Swag
 
 	// 转换路径格式：{param} -> :param
 	ginPaths := lo.Map(method.GetPaths(), func(item string, index int) string {
-		return convertPathToGinFormat(item)
+		return prefix + convertPathToGinFormat(item)
 	})
 
 	if len(middlewares) > 0 {
@@ -567,7 +568,7 @@ func onGinBind(c *gin.Context, val any, typ string) bool {
     return true
 }
 
-func onGinResponse(c *gin.Context, data any, err error) {
+func onGinResponse[T any](c *gin.Context, data any, err error) {
     c.JSON(200, data)
 }
 
