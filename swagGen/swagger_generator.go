@@ -105,9 +105,11 @@ func (g *SwaggerGenerator) generateMethodComments(method SwaggerMethod, iface Sw
 		mergeDefs[string](iface.CommonDef, method.Def, func(item parsers.Definition) (string, bool) {
 			return DefSlice{item}.GetAcceptType()
 		}, func(i []string) {
+			var ret = "json"
 			if len(i) > 0 {
-				lines = append(lines, fmt.Sprintf("// @Accept %s", i[0]))
+				ret = i[0]
 			}
+			lines = append(lines, fmt.Sprintf("// @Accept %s", ret))
 		})
 	}
 	// Produce (响应内容类型)
