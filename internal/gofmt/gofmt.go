@@ -12,9 +12,10 @@ import (
 	"go/printer"
 	"go/scanner"
 	"go/token"
-	"golang.org/x/sync/semaphore"
 	"io"
 	"io/fs"
+
+	"golang.org/x/sync/semaphore"
 )
 
 // 格式化配置

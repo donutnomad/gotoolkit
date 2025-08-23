@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/donutnomad/gotoolkit/swagGen/gofmt"
+	"github.com/donutnomad/gotoolkit/internal/gofmt"
 	parsers "github.com/donutnomad/gotoolkit/swagGen/parser"
 )
 
