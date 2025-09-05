@@ -503,6 +503,11 @@ func (g *GinGenerator) generateResponseHandling(method SwaggerMethod, methodCall
 	}
 
 	// 普通返回值 - 使用 result 避免与请求参数 data 冲突
+	if *version < 2 {
+		// 普通返回值 - 使用 result 避免与请求参数 data 冲突
+		return fmt.Sprintf(`var result %s = %s
+        onGinResponse(ctx, result)`, method.ResponseType.FullName, methodCall)
+	}
 	return fmt.Sprintf(`result, err := %s
         onGinResponse[%s](ctx, result, err)`, methodCall, method.ResponseType.FullName)
 }

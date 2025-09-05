@@ -14,6 +14,7 @@ var (
 	interfaces      = flag.String("interfaces", "", "要处理的接口名称，逗号分隔（可选，默认处理所有带注释的接口）")
 	verbose         = flag.Bool("v", false, "详细输出")
 	includeTypeRefs = flag.Bool("include-type-refs", false, "生成类型引用声明（var _ 声明）")
+	version         = flag.Int("version", 2, "兼容的版本号")
 )
 
 func main() {
