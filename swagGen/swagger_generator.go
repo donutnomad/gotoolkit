@@ -31,7 +31,9 @@ func (g *SwaggerGenerator) GenerateSwaggerComments() map[string]string {
 				continue
 			}
 			methodComments := g.generateMethodComments(method, iface)
-			out[method.Name] = strings.Join(methodComments, "\n")
+			// 使用接口名+方法名作为唯一键，避免不同接口中同名方法的冲突
+			methodKey := fmt.Sprintf("%s.%s", iface.Name, method.Name)
+			out[methodKey] = strings.Join(methodComments, "\n")
 		}
 	}
 	return out

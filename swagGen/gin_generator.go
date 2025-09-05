@@ -57,8 +57,9 @@ func (g *GinGenerator) GenerateGinCode(comments map[string]string) (constructCod
 
 		// 为每个方法生成处理器方法
 		for _, method := range iface.Methods {
-			// 添加注释
-			if v, ok := comments[method.Name]; ok {
+			// 添加注释 - 使用接口名+方法名作为键
+			methodKey := fmt.Sprintf("%s.%s", iface.Name, method.Name)
+			if v, ok := comments[methodKey]; ok {
 				parts = append(parts, v)
 			}
 			handlerCode := g.generateHandlerMethod(iface, method)
