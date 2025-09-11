@@ -265,8 +265,8 @@ func (g *GinGenerator) generateMethodBinding(iface SwaggerInterface, method Swag
 		return prefix + convertPathToGinFormat(item)
 	})
 
-	if len(middlewares) > 0 {
-		template := `
+	//if len(middlewares) > 0 {
+	template := `
 func (a *{{.WrapperName}}) {{.BindMethodName}}(router gin.IRoutes, preHandlers ...gin.HandlerFunc) { {{- range .GinPath}}
 	var handlers []gin.HandlerFunc
 	if a.handler != nil {
@@ -278,33 +278,33 @@ func (a *{{.WrapperName}}) {{.BindMethodName}}(router gin.IRoutes, preHandlers .
 }
 `
 
-		data := map[string]interface{}{
-			"WrapperName":    wrapperName,
-			"BindMethodName": bindMethodName,
-			"Handlers": lo.Uniq(lo.Flatten(lo.Map(middlewares, func(item *parsers.MiddleWare, index int) []string {
-				return item.Value
-			}))),
-			"HTTPMethod":        method.GetHTTPMethod(),
-			"GinPath":           ginPaths,
-			"HandlerMethodName": handlerMethodName,
-		}
-		return strings.TrimSpace(utils.MustExecuteTemplate(data, template))
-	} else {
-		template := `
-func (a *{{.WrapperName}}) {{.BindMethodName}}(router gin.IRoutes, preHandlers ...gin.HandlerFunc) { {{- range .GinPath}}
-	a.bind(router, "{{$.HTTPMethod}}", "{{.}}", preHandlers, nil, a.{{$.HandlerMethodName}}){{end}}
-}
-`
-
-		data := map[string]interface{}{
-			"WrapperName":       wrapperName,
-			"BindMethodName":    bindMethodName,
-			"HTTPMethod":        method.GetHTTPMethod(),
-			"GinPath":           ginPaths,
-			"HandlerMethodName": handlerMethodName,
-		}
-		return strings.TrimSpace(utils.MustExecuteTemplate(data, template))
+	data := map[string]interface{}{
+		"WrapperName":    wrapperName,
+		"BindMethodName": bindMethodName,
+		"Handlers": lo.Uniq(lo.Flatten(lo.Map(middlewares, func(item *parsers.MiddleWare, index int) []string {
+			return item.Value
+		}))),
+		"HTTPMethod":        method.GetHTTPMethod(),
+		"GinPath":           ginPaths,
+		"HandlerMethodName": handlerMethodName,
 	}
+	return strings.TrimSpace(utils.MustExecuteTemplate(data, template))
+	//	} else {
+	//		template := `
+	//func (a *{{.WrapperName}}) {{.BindMethodName}}(router gin.IRoutes, preHandlers ...gin.HandlerFunc) { {{- range .GinPath}}
+	//	a.bind(router, "{{$.HTTPMethod}}", "{{.}}", preHandlers, nil, a.{{$.HandlerMethodName}}){{end}}
+	//}
+	//`
+	//
+	//		data := map[string]interface{}{
+	//			"WrapperName":       wrapperName,
+	//			"BindMethodName":    bindMethodName,
+	//			"HTTPMethod":        method.GetHTTPMethod(),
+	//			"GinPath":           ginPaths,
+	//			"HandlerMethodName": handlerMethodName,
+	//		}
+	//		return strings.TrimSpace(utils.MustExecuteTemplate(data, template))
+	//	}
 }
 
 // generateParameterBinding 生成参数绑定代码
