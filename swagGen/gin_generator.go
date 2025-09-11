@@ -47,7 +47,7 @@ func (g *GinGenerator) GenerateGinCode(comments map[string]string) (constructCod
 		}
 
 		// 生成包装结构体
-		constructor, wrapperCode := g.generateWrapperStruct(iface, lo.Ternary(middlewareCount > 0, handlerItfName, ""))
+		constructor, wrapperCode := g.generateWrapperStruct(iface, handlerItfName)
 		parts = append(parts, wrapperCode)
 
 		// 生成 bind 通用方法
