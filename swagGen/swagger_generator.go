@@ -254,6 +254,7 @@ func (g *SwaggerGenerator) generateSuccessComment(responseType TypeInfo) string 
 	if responseTypeStr == "" {
 		responseTypeStr = "string"
 	}
+	responseTypeStr = strings.ReplaceAll(responseTypeStr, "*", "")
 
 	return fmt.Sprintf("// @Success 200 {object} %s", responseTypeStr)
 }

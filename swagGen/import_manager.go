@@ -32,30 +32,41 @@ func (mgr *EnhancedImportManager) AddOriginalImports(originalImports xast.Import
 
 		// 保存原始导入的别名映射关系
 		if originalImport.Alias != "" {
-			// 如果有显式别名，保存映射关系
-			mgr.aliasMapping[path] = originalImport.Alias
+			// 如果已经有别名映射，检查优先级
+			if existingAlias, exists := mgr.aliasMapping[path]; exists {
+				// 如果现有的是 "_" 而新的不是，优先使用新的
+				if existingAlias == "_" && originalImport.Alias != "_" {
+					mgr.aliasMapping[path] = originalImport.Alias
+				}
+				// 如果现有的不是 "_"，保持现有的
+			} else {
+				// 如果没有现有映射，直接保存
+				mgr.aliasMapping[path] = originalImport.Alias
+			}
 		} else {
 			// 如果没有显式别名，从路径推导包名
-			parts := strings.Split(path, "/")
-			if len(parts) > 0 {
-				packageName := parts[len(parts)-1]
-				// 清理包名（移除版本后缀等）
-				packageName = strings.TrimSuffix(packageName, ".git")
-				if strings.HasPrefix(packageName, "v") && len(packageName) > 1 {
-					// 检查是否是版本号
-					isVersion := true
-					for i := 1; i < len(packageName); i++ {
-						if packageName[i] < '0' || packageName[i] > '9' {
-							isVersion = false
-							break
+			if _, exists := mgr.aliasMapping[path]; !exists {
+				parts := strings.Split(path, "/")
+				if len(parts) > 0 {
+					packageName := parts[len(parts)-1]
+					// 清理包名（移除版本后缀等）
+					packageName = strings.TrimSuffix(packageName, ".git")
+					if strings.HasPrefix(packageName, "v") && len(packageName) > 1 {
+						// 检查是否是版本号
+						isVersion := true
+						for i := 1; i < len(packageName); i++ {
+							if packageName[i] < '0' || packageName[i] > '9' {
+								isVersion = false
+								break
+							}
+						}
+						if isVersion && len(parts) > 1 {
+							// 使用上一级目录名
+							packageName = parts[len(parts)-2]
 						}
 					}
-					if isVersion && len(parts) > 1 {
-						// 使用上一级目录名
-						packageName = parts[len(parts)-2]
-					}
+					mgr.aliasMapping[path] = packageName
 				}
-				mgr.aliasMapping[path] = packageName
 			}
 		}
 	}
@@ -91,13 +102,18 @@ func (mgr *EnhancedImportManager) ensureAlias(pkgPath string) string {
 
 	// 检查是否已经存在别名映射
 	if alias, exists := mgr.aliasMapping[pkgPath]; exists {
+		// 如果原始别名是 "_"，生成一个合适的别名
+		if alias == "_" {
+			// 从路径生成合适的别名
+			alias = mgr.generateAliasFromPath(pkgPath)
+		}
 		// 使用已存在的别名映射创建导入信息
 		mgr.imports[pkgPath] = &ImportInfo{
 			Path:          pkgPath,
 			Alias:         alias,
 			Used:          true,
-			DirectlyUsed:  false, // 默认为仅类型引用
-			OriginalAlias: alias, // 保存原始别名
+			DirectlyUsed:  false,                     // 默认为仅类型引用
+			OriginalAlias: mgr.aliasMapping[pkgPath], // 保存原始别名
 		}
 		return alias
 	}
@@ -143,6 +159,42 @@ func (mgr *EnhancedImportManager) ensureAlias(pkgPath string) string {
 	return finalAlias
 }
 
+// generateAliasFromPath 从包路径生成合适的别名
+func (mgr *EnhancedImportManager) generateAliasFromPath(pkgPath string) string {
+	baseName := filepath.Base(pkgPath)
+
+	// 清理 baseName，移除版本后缀
+	baseName = strings.TrimSuffix(baseName, ".git")
+	if strings.HasPrefix(baseName, "v") && len(baseName) > 1 {
+		// 检查是否是版本号 (v1, v2, v3, etc.)
+		for i := 1; i < len(baseName); i++ {
+			if baseName[i] < '0' || baseName[i] > '9' {
+				break
+			}
+			if i == len(baseName)-1 {
+				// 获取上一级目录名
+				parentPath := filepath.Dir(pkgPath)
+				if parentPath != "." && parentPath != "/" {
+					baseName = filepath.Base(parentPath)
+				}
+			}
+		}
+	}
+
+	var finalAlias string
+	if mgr.aliasCounter[baseName] == 0 {
+		// 第一次出现，使用原名
+		finalAlias = baseName
+		mgr.aliasCounter[baseName] = 1
+	} else {
+		// 已存在同名包，使用别名
+		mgr.aliasCounter[baseName]++
+		finalAlias = fmt.Sprintf("%s%d", baseName, mgr.aliasCounter[baseName])
+	}
+
+	return finalAlias
+}
+
 // AddImport 添加导入 - 标记为直接使用
 func (mgr *EnhancedImportManager) AddImport(pkgPath string) string {
 	alias := mgr.ensureAlias(pkgPath)
@@ -181,20 +233,19 @@ func (mgr *EnhancedImportManager) GetImportDeclarations() string {
 		if info.DirectlyUsed {
 			// 直接使用的包 - 使用别名
 			alias := info.Alias
-			if info.OriginalAlias != "" {
-				// 如果有原始别名，优先使用原始别名
+			if info.OriginalAlias != "" && info.OriginalAlias != "_" {
+				// 如果有原始别名且不是 _，优先使用原始别名
 				alias = info.OriginalAlias
 			}
 			line = fmt.Sprintf("\t%s \"%s\"", alias, info.Path)
 		} else {
-			// 仅类型引用的包 - 检查是否有原始别名
-			if info.OriginalAlias != "" {
-				// 如果有原始别名，使用原始别名而不是 _
-				line = fmt.Sprintf("\t%s \"%s\"", info.OriginalAlias, info.Path)
-			} else {
-				// 没有原始别名才使用 _
-				line = fmt.Sprintf("\t_ \"%s\"", info.Path)
+			// 仅类型引用的包 - 使用正常别名，不使用 _
+			alias := info.Alias
+			if info.OriginalAlias != "" && info.OriginalAlias != "_" {
+				// 如果有原始别名且不是 _，优先使用原始别名
+				alias = info.OriginalAlias
 			}
+			line = fmt.Sprintf("\t%s \"%s\"", alias, info.Path)
 		}
 
 		// 分类导入
