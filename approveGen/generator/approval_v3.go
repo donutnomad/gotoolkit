@@ -67,9 +67,16 @@ func (amc *ApprovalCaller) UnmarshalMethodArgs(method string, content string) (a
 }
 {{- end}}
 
-{{- if .AddFormatterMethod}}
-
 func (amc *ApprovalCaller) Format(ctx context.Context, arg any) (any, error) {
+{{- $hasAnyFormatter := false -}}
+{{- range .Methods -}}
+{{- if hasFormatterMethod . -}}
+{{- $hasAnyFormatter = true -}}
+{{- end -}}
+{{- end -}}
+{{- if not $hasAnyFormatter}}
+	return "", nil
+{{- else}}
 	switch v := arg.(type) {
 {{- range .Methods}}
 {{- $method := . -}}
@@ -80,6 +87,7 @@ func (amc *ApprovalCaller) Format(ctx context.Context, arg any) (any, error) {
 {{- end}}
 	}
 	return nil, errors.New("NoFormatter")
+{{- end}}
 }
 
 type IApprovalFormatter interface {
@@ -91,20 +99,16 @@ type IApprovalFormatter interface {
 {{- end}}
 }
 
-{{- end}}
 `
 
-func GenMethodCallApprovalV3(genMethodName string, addUnmarshalMethodArgs bool, addFormatterMethod bool, pkgName string, everyMethodSuffix string, methods []MyMethod, getType func(typ ast.Expr, method MyMethod) string, defaultSuccess bool, hookRejectedMap map[string]bool) types.JenStatementSlice {
+func GenMethodCallApprovalV3(genMethodName string, addUnmarshalMethodArgs bool, pkgName string, everyMethodSuffix string, methods []MyMethod, getType func(typ ast.Expr, method MyMethod) string, defaultSuccess bool, hookRejectedMap map[string]bool) types.JenStatementSlice {
 	// 计算 FormatterInterfaces
 	formatterInterfaces := make(map[string]bool)
-	if addFormatterMethod {
-		formatterInterfaces["IApprovalFormatter"] = true
-	}
+	formatterInterfaces["IApprovalFormatter"] = true
 
 	data := GenMethodCallApprovalDataV3{
 		GenMethodName:          genMethodName,
 		AddUnmarshalMethodArgs: addUnmarshalMethodArgs,
-		AddFormatterMethod:     addFormatterMethod,
 		PkgName:                pkgName,
 		Methods:                methods,
 		EveryMethodSuffix:      everyMethodSuffix,
@@ -467,7 +471,6 @@ type FormatterMethod struct {
 type GenMethodCallApprovalDataV3 struct {
 	GenMethodName          string
 	AddUnmarshalMethodArgs bool
-	AddFormatterMethod     bool
 	PkgName                string
 	Methods                []MyMethod
 	EveryMethodSuffix      string

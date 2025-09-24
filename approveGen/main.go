@@ -3,15 +3,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/Xuanwo/gg"
-	"github.com/dave/jennifer/jen"
-	"github.com/donutnomad/gotoolkit/approveGen/generator"
-	"github.com/donutnomad/gotoolkit/approveGen/methods"
-	"github.com/donutnomad/gotoolkit/approveGen/types"
-	"github.com/donutnomad/gotoolkit/approveGen/utils"
-	utils2 "github.com/donutnomad/gotoolkit/internal/utils"
-	xast2 "github.com/donutnomad/gotoolkit/internal/xast"
-	"github.com/samber/lo"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -22,6 +13,16 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/Xuanwo/gg"
+	"github.com/dave/jennifer/jen"
+	"github.com/donutnomad/gotoolkit/approveGen/generator"
+	"github.com/donutnomad/gotoolkit/approveGen/methods"
+	"github.com/donutnomad/gotoolkit/approveGen/types"
+	"github.com/donutnomad/gotoolkit/approveGen/utils"
+	utils2 "github.com/donutnomad/gotoolkit/internal/utils"
+	xast2 "github.com/donutnomad/gotoolkit/internal/xast"
+	"github.com/samber/lo"
 )
 
 const AnnotationName = "Approve"
@@ -437,7 +438,7 @@ func main() {
 				}
 			}
 
-			m1 := generator.GenMethodCallApprovalV3("Call", true, len(formatterMethods) > 0, *pkgName, "", combinedMethods, func(typ ast.Expr, method MyMethod) string {
+			m1 := generator.GenMethodCallApprovalV3("Call", true, *pkgName, "", combinedMethods, func(typ ast.Expr, method MyMethod) string {
 				return getNameFunc(typ, method.Imports)
 			}, false, hookRejectedMap)
 			codes.Add(m1.As()...)
