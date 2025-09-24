@@ -86,7 +86,7 @@ func (amc *ApprovalCaller) Format(ctx context.Context, arg any) (any, error) {
 {{- end}}
 {{- end}}
 	}
-	return nil, errors.New("NoFormatter")
+	return nil, errors.Join(errors.New("CodeUnsupportedArgType"), fmt.Errorf("unsupported arg type %T", arg))
 {{- end}}
 }
 

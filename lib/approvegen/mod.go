@@ -7,7 +7,7 @@ import (
 )
 
 var ErrUnknownMethod = errors.New("ErrUnknownMethod")
-var ErrNoFormatter = errors.New("NoFormatter")
+var ErrUnsupportedArgType = errors.New("UnsupportedArgType")
 
 type Caller interface {
 	Call(ctx context.Context, arg any, approved bool) (any, error)
@@ -32,8 +32,8 @@ func (c Callers) Format(ctx context.Context, method, content string) (any, error
 	}
 	ret, err := caller.Format(ctx, arg)
 	if err != nil {
-		if err.Error() == "NoFormatter" {
-			return nil, ErrNoFormatter
+		if err.Error() == ErrUnsupportedArgType.Error() {
+			return nil, ErrUnsupportedArgType
 		}
 		return nil, err
 	}
