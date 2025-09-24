@@ -107,6 +107,8 @@ var (
 	paths           = flag.String("path", "", "dir paths, separated by comma")
 	outputFileName_ = flag.String("out", "", "output filename")
 	version2        = flag.Bool("v2", false, "version2")
+	version3        = flag.Bool("v3", false, "version3")
+	pkgName         = flag.String("pkgname", "", "package name prefix for MethodName()")
 	genMethods      = flag.Bool("methods", true, "generate CallMethodForApproval and CallMethodForApprovalHookRejected methods")
 )
 
@@ -196,6 +198,10 @@ func main() {
 		if *version2 {
 			importMgr.AddImport("errors")
 		}
+	}
+	// v3版本的额外imports
+	if *version3 && *genMethods {
+		importMgr.AddImport("errors")
 	}
 	// 字段格式化方法
 	var formatFunctionBy = func(name string) string {
@@ -388,8 +394,14 @@ func main() {
 		}
 
 		// 生成方法 MethodName()
+		var methodNameValue string
+		if *pkgName != "" {
+			methodNameValue = fmt.Sprintf("%s_%s_%s", *pkgName, method.StructNameWithoutPtr(), method.MethodName)
+		} else {
+			methodNameValue = fmt.Sprintf("%s_%s", method.StructNameWithoutPtr(), method.MethodName)
+		}
 		_m := methods.NoteMethod{
-			Info: &methods.NoteMethodInfo{Note: fmt.Sprintf("%s_%s", method.StructNameWithoutPtr(), method.MethodName)},
+			Info: &methods.NoteMethodInfo{Note: methodNameValue},
 		}
 		methodCodes = append(methodCodes, _m.WithMethod("MethodName").Generate(receiver, structName))
 
@@ -400,7 +412,36 @@ func main() {
 
 	// 根据命令行参数决定是否生成方法调用审批相关方法
 	if *genMethods {
-		if *version2 {
+		if *version3 {
+			// 使用v3版本生成方法，生成ApprovalMethodCaller结构体
+			// 创建一个 map 来标记哪些方法支持 HookRejected
+			hookRejectedMap := make(map[string]bool)
+			for _, method := range hookRejectedMethods {
+				hookRejectedMap[method.GenMethod()] = true
+			}
+
+			// 将formatterMethods和allMethods合并，确保formatter方法也被包含
+			var combinedMethods types.MyMethodSlice
+			combinedMethods = append(combinedMethods, allMethods...)
+			for _, fMethod := range formatterMethods {
+				// 检查是否已经在allMethods中
+				found := false
+				for _, aMethod := range allMethods {
+					if fMethod.GenMethod() == aMethod.GenMethod() {
+						found = true
+						break
+					}
+				}
+				if !found {
+					combinedMethods = append(combinedMethods, fMethod)
+				}
+			}
+
+			m1 := generator.GenMethodCallApprovalV3("Call", true, len(formatterMethods) > 0, *pkgName, "", combinedMethods, func(typ ast.Expr, method MyMethod) string {
+				return getNameFunc(typ, method.Imports)
+			}, false, hookRejectedMap)
+			codes.Add(m1.As()...)
+		} else if *version2 {
 			// 使用v2版本生成方法，需要传递 hookRejectedMethods 的信息
 			// 创建一个 map 来标记哪些方法支持 HookRejected
 			hookRejectedMap := make(map[string]bool)
@@ -426,8 +467,8 @@ func main() {
 		}
 	}
 
-	// 生成Formatter方法
-	if len(formatterMethods) > 0 {
+	// 生成Formatter方法 (v3版本跳过，因为已经在ApprovalMethodCaller中生成)
+	if len(formatterMethods) > 0 && !*version3 {
 		codes.Line()
 		codes.Comment("========================== Formatter Method ==========================").Line()
 
