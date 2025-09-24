@@ -16,10 +16,11 @@ import (
 const methodCallApprovalTemplateV3 = `
 type ApprovalCaller struct {
 	targets []any
+	formatter IApprovalFormatter
 }
 
-func newApprovalCaller(targets ...any) *ApprovalCaller {
-    return &ApprovalCaller{targets:targets}
+func newApprovalCaller(formatter IApprovalFormatter, targets ...any) *ApprovalCaller {
+    return &ApprovalCaller{targets: targets, formatter: formatter}
 }
 
 func (amc *ApprovalCaller) {{.GenMethodName}}(ctx context.Context, arg any, approved bool) (any, error) {
@@ -68,38 +69,38 @@ func (amc *ApprovalCaller) UnmarshalMethodArgs(method string, content string) (a
 
 {{- if .AddFormatterMethod}}
 
-// ========================== Formatter Method ==========================
-{{- $structFormatterMethods := groupFormatterMethodsByStruct .Methods $.GetType -}}
-{{range $structName, $methods := $structFormatterMethods}}
-
-type {{$structName}}FormatterInterface interface {
-{{- range $methods}}
-	{{.MethodName}}({{.Signature}})
-{{- end}}
-}
-{{- end}}
-
-func (amc *ApprovalCaller) Format(ctx context.Context, arg any, formatter any) (any, error) {
+func (amc *ApprovalCaller) Format(ctx context.Context, arg any) (any, error) {
 	switch v := arg.(type) {
 {{- range .Methods}}
 {{- $method := . -}}
 {{- if hasFormatterMethod $method}}
 	case *{{.OutStructName}}:
-		type {{.OutStructName}}_Interface interface {
-			{{getFormatterMethodName .}}({{formatFormatterSignature . $.GetType}})
-		}
-		if target, ok := formatter.({{.OutStructName}}_Interface); ok {
-			return target.{{getFormatterMethodName .}}({{formatFormatterCallParams . $.GetType}})
-		}
+		return amc.formatter.{{getFormatterMethodName .}}({{formatFormatterCallParams . $.GetType}})
 {{- end}}
 {{- end}}
 	}
 	return nil, errors.New("NoFormatter")
 }
+
+type IApprovalFormatter interface {
+{{- $structFormatterMethods := groupFormatterMethodsByStruct .Methods $.GetType -}}
+{{range $structName, $methods := $structFormatterMethods}}
+{{- range $methods}}
+	{{.MethodName}}({{.Signature}})
+{{- end}}
+{{- end}}
+}
+
 {{- end}}
 `
 
 func GenMethodCallApprovalV3(genMethodName string, addUnmarshalMethodArgs bool, addFormatterMethod bool, pkgName string, everyMethodSuffix string, methods []MyMethod, getType func(typ ast.Expr, method MyMethod) string, defaultSuccess bool, hookRejectedMap map[string]bool) types.JenStatementSlice {
+	// 计算 FormatterInterfaces
+	formatterInterfaces := make(map[string]bool)
+	if addFormatterMethod {
+		formatterInterfaces["IApprovalFormatter"] = true
+	}
+
 	data := GenMethodCallApprovalDataV3{
 		GenMethodName:          genMethodName,
 		AddUnmarshalMethodArgs: addUnmarshalMethodArgs,
@@ -110,6 +111,7 @@ func GenMethodCallApprovalV3(genMethodName string, addUnmarshalMethodArgs bool, 
 		DefaultSuccess:         defaultSuccess,
 		GetType:                getType,
 		HookRejectedMap:        hookRejectedMap,
+		FormatterInterfaces:    formatterInterfaces,
 	}
 
 	// 创建模板函数
@@ -472,4 +474,5 @@ type GenMethodCallApprovalDataV3 struct {
 	DefaultSuccess         bool
 	GetType                func(typ ast.Expr, method MyMethod) string
 	HookRejectedMap        map[string]bool
+	FormatterInterfaces    map[string]bool
 }

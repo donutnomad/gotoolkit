@@ -11,7 +11,7 @@ var ErrNoFormatter = errors.New("NoFormatter")
 
 type Caller interface {
 	Call(ctx context.Context, arg any, approved bool) (any, error)
-	Format(ctx context.Context, arg any, formatter any) (any, error)
+	Format(ctx context.Context, arg any) (any, error)
 	UnmarshalMethodArgs(method string, content string) (any, error)
 }
 
@@ -25,12 +25,12 @@ func (c Callers) Call(ctx context.Context, method, content string, approved bool
 	return caller.Call(ctx, arg, approved)
 }
 
-func (c Callers) Format(ctx context.Context, method, content string, formatter any) (any, error) {
+func (c Callers) Format(ctx context.Context, method, content string) (any, error) {
 	arg, caller, err := c.UnmarshalMethodArgs(method, content)
 	if err != nil {
 		return nil, err
 	}
-	ret, err := caller.Format(ctx, arg, formatter)
+	ret, err := caller.Format(ctx, arg)
 	if err != nil {
 		if err.Error() == "NoFormatter" {
 			return nil, ErrNoFormatter
