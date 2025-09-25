@@ -14,6 +14,7 @@ func main() {
 	var structName = flag.String("struct", "", "结构体名称")
 	var clean = flag.Bool("clean", false, "清理未使用的setter方法")
 	var patch = flag.Bool("patch", false, "生成GORM Patch结构体和Build方法")
+	var fields = flag.Bool("fields", false, "生成字段常量结构体")
 	var debug = flag.Bool("debug", false, "调试模式，打印解析结果")
 	flag.Parse()
 
@@ -68,6 +69,15 @@ func main() {
 			log.Fatalf("生成GORM patch文件失败: %v", err)
 		}
 		fmt.Printf("成功生成GORM patch文件: %s\n", outputFile)
+	} else if *fields {
+		// 字段常量生成模式
+		gormModel := parseGormModel(structInfo)
+		outputFile := strings.TrimSuffix(targetFile, ".go") + "_fields.go"
+		err = generateFieldsFile(outputFile, gormModel)
+		if err != nil {
+			log.Fatalf("生成字段常量文件失败: %v", err)
+		}
+		fmt.Printf("成功生成字段常量文件: %s\n", outputFile)
 	} else {
 		// 原有的setter生成模式
 		outputFile := strings.TrimSuffix(targetFile, ".go") + "_setter.go"
