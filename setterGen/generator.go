@@ -201,6 +201,17 @@ func generateSetterMethodsWithFields(structInfo *StructInfo, fields []FieldInfo)
 		sb.WriteString("}\n\n")
 	}
 
+	// 添加固定的ClearPatch方法
+	patchTypeName := structInfo.Name + "Patch"
+	sb.WriteString(fmt.Sprintf("func (%s *%s) ClearPatch() {\n", receiverName, structInfo.Name))
+	sb.WriteString(fmt.Sprintf("\t%s.patch = %s{}\n", receiverName, patchTypeName))
+	sb.WriteString("}\n\n")
+
+	// 添加固定的ExportPatch方法
+	sb.WriteString(fmt.Sprintf("func (%s *%s) ExportPatch() *%s {\n", receiverName, structInfo.Name, patchTypeName))
+	sb.WriteString(fmt.Sprintf("\treturn &%s.patch\n", receiverName))
+	sb.WriteString("}\n\n")
+
 	return sb.String()
 }
 
