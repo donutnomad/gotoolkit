@@ -19,10 +19,10 @@ import (
 type ScopeFuncG[Model any] func(b *QueryBuilderG[Model])
 
 type QueryBuilderG[T any] struct {
-	selects  []field.Expression
+	selects  []field.IField
 	from     interface{ TableName() string }
 	joins    []JoinClause
-	wheres   []field.Expression
+	wheres   []clause.Expression
 	orders   []order
 	offset   int
 	limit    int
@@ -49,13 +49,13 @@ func FromG[T any, Table interface {
 }
 
 type baseQueryBuilderG[T any] struct {
-	selects []field.Expression
+	selects []field.IField
 }
 
 func (baseQueryBuilderG[T]) Select(fields ...field.IField) *baseQueryBuilderG[T] {
 	var b = &baseQueryBuilderG[T]{}
 	for _, f := range fields {
-		b.selects = append(b.selects, f.Column())
+		b.selects = append(b.selects, f)
 	}
 	return b
 }
@@ -76,9 +76,6 @@ func (b *QueryBuilderG[T]) Join(clauses ...JoinClause) *QueryBuilderG[T] {
 
 func (b *QueryBuilderG[T]) Where(exprs ...field.Expression) *QueryBuilderG[T] {
 	for _, expr := range exprs {
-		if expr.Query == "" {
-			continue
-		}
 		b.wheres = append(b.wheres, expr)
 	}
 	return b
@@ -335,37 +332,14 @@ func (b *QueryBuilderG[T]) buildStmt(stmt *gorm.Statement, quote func(field stri
 		}
 		stmt.TableExpr, stmt.Table = txTable(quote, tn)
 	}
-	var selects []string
-	var selectArgs []any
-	for _, s := range b.selects {
-		query, args := s.Unpack()
-		selects = append(selects, query)
-		selectArgs = append(selectArgs, args...)
+	addSelects(stmt, b.selects)
+	if len(b.wheres) > 0 {
+		stmt.AddClause(clause.Where{Exprs: b.wheres})
 	}
-	if len(selects) > 0 {
-		stmt.Selects = selects
-
-		for _, arg := range selectArgs {
-			switch arg := arg.(type) {
-			case string:
-				stmt.Selects = append(stmt.Selects, arg)
-			case []string:
-				stmt.Selects = append(stmt.Selects, arg...)
-			default:
-				panic(fmt.Errorf("unsupported select args %v %v", selects, selectArgs))
-			}
-		}
-
-		if clause, ok := stmt.Clauses["SELECT"]; ok {
-			clause.Expression = nil
-			stmt.Clauses["SELECT"] = clause
-		}
-	}
-	for _, where := range b.wheres {
-		if conds := stmt.BuildCondition(where.Query, where.Args...); len(conds) > 0 {
-			stmt.AddClause(clause.Where{Exprs: conds})
-		}
-	}
+	//for _, where := range b.wheres {
+	//	if conds := stmt.BuildCondition(where.Query, where.Args...); len(conds) > 0 {
+	//	}
+	//}
 	for _, join := range b.joins {
 		_from := stmt.Clauses["FROM"]
 		fromClause := clause.From{}
@@ -384,8 +358,12 @@ func (b *QueryBuilderG[T]) buildStmt(stmt *gorm.Statement, quote func(field stri
 	}
 	var orderBy clause.OrderBy
 	for _, order := range b.orders {
+		c := order.field
+		if c.IsExpr() {
+			continue
+		}
 		orderBy.Columns = append(orderBy.Columns, clause.OrderByColumn{
-			Column: order.field.ToColumn(),
+			Column: c.ToColumn(),
 			Desc:   !order.asc,
 		})
 	}

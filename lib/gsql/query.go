@@ -14,13 +14,13 @@ func Select(fields ...field.IField) *baseQueryBuilder {
 }
 
 type baseQueryBuilder struct {
-	selects []field.Expression
+	selects []field.IField
 }
 
 func (baseQueryBuilder) Select(fields ...field.IField) *baseQueryBuilder {
 	var b = &baseQueryBuilder{}
 	for _, f := range fields {
-		b.selects = append(b.selects, f.Column())
+		b.selects = append(b.selects, f)
 	}
 	return b
 }
@@ -181,6 +181,14 @@ func (b *QueryBuilder) Find(db IDB, dest any) error {
 		return ret.Error
 	}
 	return ret.Error
+}
+
+func (b *QueryBuilder) ToField(fieldName string) field.IField {
+	e := b.ToExpr()
+	return field.NewBaseFromSql(clause.Expr{
+		SQL:  e.SQL,
+		Vars: e.Vars,
+	}, fieldName)
 }
 
 //// Scan 执行查询

@@ -1,38 +1,18 @@
 package field
 
 import (
-	"strings"
-
 	"github.com/samber/mo"
 	"gorm.io/gorm/clause"
 )
 
-type Expression struct {
-	Query string
-	Args  []any
-
-	fn func(writer *strings.Builder)
-}
-
-func (e Expression) Build(builder clause.Builder) {
-	e.ToExpr().Build(builder)
-}
-
-func (e Expression) ToExpr() clause.Expr {
-	return clause.Expr{
-		SQL:  e.Query,
-		Vars: e.Args,
-	}
-}
-func (e Expression) Unpack() (string, []any) {
-	return e.Query, e.Args
-}
+type Expression = clause.Expression
 
 type IField interface {
-	Column() Expression
+	// ToColumn 只有IsExpr为false时，才可以调用
 	ToColumn() clause.Column
+	ToExpr() Expression
 	Name() string
-	As(alias string) IField
+	IsExpr() bool
 }
 
 type Number interface {
@@ -164,12 +144,8 @@ func (f Comparable[T]) FieldType() T {
 	return def
 }
 
-func (f Comparable[T]) WithTable(tableName interface{ TableName() string }, fieldName ...string) Comparable[T] {
-	var name = f.Base.Name()
-	if len(fieldName) > 0 {
-		name = fieldName[0]
-	}
-	return NewComparable[T](tableName.TableName(), name)
+func (f Comparable[T]) WithTable(tableName interface{ TableName() string }, fieldNames ...string) Comparable[T] {
+	return NewComparable[T](tableName.TableName(), optional(fieldNames, f.Base.Name()))
 }
 
 func (f Comparable[T]) WithName(fieldName string) Comparable[T] {

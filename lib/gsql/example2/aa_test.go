@@ -1,13 +1,11 @@
 package example2
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/davecgh/go-spew/spew"
 	gsql "github.com/donutnomad/gotoolkit/lib/gsql"
 	"github.com/donutnomad/gotoolkit/lib/gsql/field"
-	"github.com/samber/lo"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -166,7 +164,17 @@ func TestD(t *testing.T) {
 		//spew.Dump(lo.FromSlicePtr(rets))
 		//spew.Dump(err)
 
-		spew.Dump(gsql.PluckG(u.Age).From(u).Where(u.Age.Eq(12)).Distinct().Find(db))
+		//spew.Dump(gsql.PluckG(u.Age).From(u).Where(u.Age.Eq(12)).Distinct().Find(db))
+		spew.Dump(gsql.SelectG[User](
+			u.ID,
+			gsql.Select(u.Name).From(u).Limit(1).ToField("tt"),
+			//(SELECT name FROM users LIMIT 1)
+		).From(u).Where(u.Age.Eq(12)).Distinct().Find(db))
+
+		spew.Dump(gsql.SelectG[User](
+			u.Name,
+		).From(u).Where(u.Name.Like("%$%%", '$')).Find(db),
+		)
 
 		//var rets []string
 		//err := gsql.SelectG[tmpRet]().
@@ -303,7 +311,7 @@ func TestD(t *testing.T) {
 			gsql.Select().From(tmp2).Where(tmp2.Fields.Rn.Eq(1)),
 		)
 
-		fmt.Println("打印tmp1:", lo.ToPtr(tmp1.Expr()).ToSQL())
+		//fmt.Println("打印tmp1:", lo.ToPtr(tmp1.Expr()).ToSQL())
 
 		nt := RORTransferBalanceSchema.As("rt")
 

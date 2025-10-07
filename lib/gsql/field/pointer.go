@@ -1,22 +1,29 @@
 package field
 
 import (
-	"fmt"
+	"gorm.io/gorm/clause"
 )
 
 type pointerImpl struct {
 	IField
 }
 
-func (f pointerImpl) NotNil() Expression {
-	return f.operatePointerValue("IS NOT NULL")
-}
-
 func (f pointerImpl) IsNil() Expression {
-	return f.operatePointerValue("IS NULL")
+	if f.IsExpr() {
+		panic("[pointerImpl] cannot operate on expr")
+	}
+	return clause.Eq{
+		Column: f.ToColumn(),
+		Value:  nil,
+	}
 }
 
-func (f pointerImpl) operatePointerValue(operator string) Expression {
-	query, args := f.Column().Unpack()
-	return Expression{Query: fmt.Sprintf("%s %s", query, operator), Args: args}
+func (f pointerImpl) NotNil() Expression {
+	if f.IsExpr() {
+		panic("[pointerImpl] cannot operate on expr")
+	}
+	return clause.Neq{
+		Column: f.ToColumn(),
+		Value:  nil,
+	}
 }

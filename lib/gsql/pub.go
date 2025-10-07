@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/donutnomad/gotoolkit/lib/gsql/field"
+	"github.com/samber/lo"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -29,13 +30,13 @@ func MapComparable[OUT any, IN any](input field.Comparable[IN]) field.Comparable
 }
 
 func Field(sql string, args ...any) field.IField {
-	return field.NewBaseFromSql(Expr(sql, args...))
+	return field.NewBaseFromSql(Expr(sql, args...), "")
 }
 
 func Expr(sql string, args ...any) field.Expression {
-	return field.Expression{
-		Query: sql,
-		Args:  args,
+	return clause.Expr{
+		SQL:  sql,
+		Vars: args,
 	}
 }
 
@@ -51,7 +52,7 @@ func DefineTable[Model any, T any](tableName string, types T, builder *QueryBuil
 	b := builder.Clone()
 
 	if len(b.selects) == 0 {
-		b.selects = append(b.selects, Star.Column())
+		b.selects = append(b.selects, Star)
 	}
 
 	var newTable = reflect.ValueOf(tableNameFn(tableName))
@@ -103,31 +104,11 @@ func DefineTable[Model any, T any](tableName string, types T, builder *QueryBuil
 }
 
 func And(exprs ...field.Expression) field.Expression {
-	return buildAndOr(exprs, "AND")
+	return clause.And(exprs...)
 }
 
 func Or(exprs ...field.Expression) field.Expression {
-	return buildAndOr(exprs, "OR")
-}
-
-func buildAndOr(exprs []field.Expression, operator string) field.Expression {
-	var query strings.Builder
-	var args []any
-	query.WriteString("(")
-	for i, expr := range exprs {
-		if i > 0 {
-			query.WriteString(" ")
-			query.WriteString(operator)
-			query.WriteString(" ")
-		}
-		query.WriteString(expr.Query)
-		args = append(args, expr.Args...)
-	}
-	query.WriteString(")")
-	return field.Expression{
-		Query: query.String(),
-		Args:  args,
-	}
+	return clause.Or(exprs...)
 }
 
 var (
@@ -163,16 +144,29 @@ func addSelects(stmt *gorm.Statement, selects []field.IField) {
 	if len(selects) == 0 {
 		return
 	}
-
-	var columns []clause.Column
-	for _, s := range selects {
-		columns = append(columns, s.ToColumn())
-	}
-
 	stmt.AddClause(clause.Select{
 		Distinct: stmt.Distinct,
-		Columns:  columns,
+		Expression: columnClause{
+			commaExpr: clause.CommaExpression{
+				Exprs: lo.Map(selects, func(item field.IField, index int) clause.Expression {
+					return item.ToExpr()
+				}),
+			},
+			distinct: stmt.Distinct,
+		},
 	})
+}
+
+type columnClause struct {
+	commaExpr clause.CommaExpression
+	distinct  bool
+}
+
+func (c columnClause) Build(builder clause.Builder) {
+	if c.distinct {
+		_, _ = builder.WriteString("DISTINCT ")
+	}
+	c.commaExpr.Build(builder)
 }
 
 type Table struct {

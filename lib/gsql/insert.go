@@ -91,9 +91,10 @@ func (b *insertBuilderWithValues[T]) Exec(db IDB) error {
 func (b *insertBuilderWithValues[T]) ExecWithResult(db IDB) (int64, error) {
 	var tx = db.Model(lo.Empty[T]())
 	if len(b.selectColumns) > 0 {
-		tx = tx.Select(lo.Map(b.selectColumns, func(item field.IField, index int) string {
-			return item.Name()
-		}))
+		addSelects(tx.Statement, b.selectColumns)
+		//tx = tx.Select(lo.Map(b.selectColumns, func(item field.IField, index int) string {
+		//	return item.Name()
+		//}))
 	}
 	if b.ignore {
 		tx = tx.Clauses(clause.Insert{
