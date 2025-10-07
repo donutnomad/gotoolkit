@@ -270,6 +270,16 @@ func parseStructFieldsWithStackAndImports(fieldList []*ast.Field, stack map[stri
 		}
 	}
 
+	for i, field := range fields {
+		if field.SourceType != "" {
+			if idx := strings.Index(field.SourceType, "."); idx >= 0 {
+				if !strings.Contains(field.Type, ".") && (field.Type[0] >= 'A' && field.Type[0] <= 'Z') {
+					fields[i].Type = field.SourceType[:idx] + "." + field.Type
+				}
+			}
+		}
+	}
+
 	return fields, nil
 }
 
