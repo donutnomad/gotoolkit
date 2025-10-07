@@ -37,8 +37,8 @@ func SelectG[T any](fields ...field.IField) *baseQueryBuilderG[T] {
 func PluckG[T any, Field interface {
 	field.IField
 	field.IFieldType[T]
-}](field Field) *baseQueryBuilderG[T] {
-	return SelectG[T](field)
+}](f Field) *baseQueryBuilderG[T] {
+	return SelectG[T](f)
 }
 
 func FromG[T any, Table interface {
@@ -232,46 +232,22 @@ func (b *QueryBuilderG[T]) Find(db IDB) ([]*T, error) {
 }
 
 func (b *QueryBuilderG[T]) ToField(asName string) field.IField {
+	if len(b.selects) == 0 {
+		panic("selects is empty")
+		//if v, ok := b.from.(interface{ ModelType() *T }); ok {
+		//
+		//} else {
+		//	panic("")
+		//}
+	} else {
+		b.selects = b.selects[0:1]
+	}
 	e := b.ToExpr()
 	return field.NewBaseFromSql(clause.Expr{
 		SQL:  e.SQL,
 		Vars: e.Vars,
 	}, asName)
 }
-
-//func (b *QueryBuilderG[T]) ToFieldG(asName string) field.Pattern[T] {
-//	e := b.ToExpr()
-//	base := field.NewBaseFromSql(clause.Expr{
-//		SQL:  e.SQL,
-//		Vars: e.Vars,
-//	}, asName, b.from.TableName())
-//	return field.NewPatternWith[T](*base)
-//}
-
-//// Scan 执行查询
-//func (b *QueryBuilderG[T]) Scan(db IDB) (*T, error) {
-//	var def T
-//	ret := b.build(db).Scan(&def)
-//	if ret.RowsAffected == 0 {
-//		return nil, nil
-//	} else if ret.Error != nil {
-//		return nil, ret.Error
-//	}
-//	return &def, nil
-//}
-
-//func (b *QueryBuilderG[T]) Pluck(db IDB, column interface {
-//	field.IField
-//	field.IFieldType[T]
-//}) ([]T, error) {
-//	var name = field.ExtractColumn(column)
-//	builder := b.Clone()
-//	builder.selects = nil
-//
-//	var dest []T
-//	err := builder.build(db).Pluck(name, &dest).Error
-//	return dest, err
-//}
 
 func (b *QueryBuilderG[T]) firstLast(db IDB, order, desc bool) (*T, error) {
 	var dest T
@@ -398,3 +374,37 @@ var dialector = mysql.Dialector{
 		},
 	},
 }
+
+//func (b *QueryBuilderG[T]) ToFieldG(asName string) field.Pattern[T] {
+//	e := b.ToExpr()
+//	base := field.NewBaseFromSql(clause.Expr{
+//		SQL:  e.SQL,
+//		Vars: e.Vars,
+//	}, asName, b.from.TableName())
+//	return field.NewPatternWith[T](*base)
+//}
+
+//// Scan 执行查询
+//func (b *QueryBuilderG[T]) Scan(db IDB) (*T, error) {
+//	var def T
+//	ret := b.build(db).Scan(&def)
+//	if ret.RowsAffected == 0 {
+//		return nil, nil
+//	} else if ret.Error != nil {
+//		return nil, ret.Error
+//	}
+//	return &def, nil
+//}
+
+//func (b *QueryBuilderG[T]) Pluck(db IDB, column interface {
+//	field.IField
+//	field.IFieldType[T]
+//}) ([]T, error) {
+//	var name = field.ExtractColumn(column)
+//	builder := b.Clone()
+//	builder.selects = nil
+//
+//	var dest []T
+//	err := builder.build(db).Pluck(name, &dest).Error
+//	return dest, err
+//}

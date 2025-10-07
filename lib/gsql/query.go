@@ -13,6 +13,13 @@ func Select(fields ...field.IField) *baseQueryBuilder {
 	return baseQueryBuilder{}.Select(fields...)
 }
 
+func Pluck[T any, Field interface {
+	field.IField
+	field.IFieldType[T]
+}](f Field) *baseQueryBuilder {
+	return Select(f)
+}
+
 type baseQueryBuilder struct {
 	selects []field.IField
 }
@@ -184,23 +191,14 @@ func (b *QueryBuilder) Find(db IDB, dest any) error {
 }
 
 func (b *QueryBuilder) ToField(asName string) field.IField {
+	if len(b.selects) == 0 {
+		panic("selects is empty")
+	} else {
+		b.selects = b.selects[0:1]
+	}
 	e := b.ToExpr()
 	return field.NewBaseFromSql(clause.Expr{
 		SQL:  e.SQL,
 		Vars: e.Vars,
 	}, asName)
 }
-
-//// Scan 执行查询
-//func (b *QueryBuilder) Scan(db IDB, dest any) error {
-//	return b.build(db).Scan(dest).Error
-//}
-
-// 需要解析Model信息，直接用select就好了
-
-//func (b *QueryBuilder) Pluck(db IDB, column field.IField, dest any) error {
-//	var name = field.ExtractColumn(column)
-//	builder := b.Clone()
-//	builder.selects = nil
-//	return builder.build(db).Pluck(name, dest).Error
-//}
