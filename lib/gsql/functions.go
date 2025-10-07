@@ -8,31 +8,6 @@ import (
 
 var Star field.IField = field.NewBase("", "*")
 
-func MapPattern[OUT any, IN any](input field.Pattern[IN]) field.Pattern[OUT] {
-	return field.NewPatternWith[OUT](input.Base)
-}
-
-func MapComparable[OUT any, IN any](input field.Comparable[IN]) field.Comparable[OUT] {
-	return field.NewComparableWith[OUT](input.Base)
-}
-
-func Field(sql string, args ...any) field.IField {
-	return field.NewBaseFromSql(Expr(sql, args...))
-}
-
-func Expr(sql string, args ...any) field.Expression {
-	return field.Expression{
-		Query: sql,
-		Args:  args,
-	}
-}
-
-func VALUES(f field.IField) field.Expression {
-	return field.Expression{
-		Query: fmt.Sprintf("VALUES(%s)", f.Column()),
-	}
-}
-
 func FALSE() field.Expression {
 	return field.Expression{
 		Query: "FALSE",

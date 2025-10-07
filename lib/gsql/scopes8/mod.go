@@ -16,7 +16,7 @@ func Sort[Model any](field field.IField, asc ...bool) gsql.ScopeFuncG[Model] {
 //	field.IField
 //}, Model any](db gsql.IDB, query *gsql.QueryBuilderG[Model], field Field) ([]FieldType, error) {
 //	var dest []FieldType
-//	err := query.Clone().ClearSelects().Tx(db).Pluck(field.Column().Query, &dest).Error
+//	err := query.Clone().ClearSelects().Tx(db).Pluck(field.Column().Expr, &dest).Error
 //	return dest, err
 //}
 

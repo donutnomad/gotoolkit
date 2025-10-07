@@ -13,6 +13,15 @@ type DBResult struct {
 	RowsAffected int64
 }
 
+type ICompactFrom interface {
+	Expr() clause.Expression
+	TableName() string
+}
+
+type ITableName interface {
+	TableName() string
+}
+
 type IDB interface {
 	Model(value any) (tx *gorm.DB)
 	Table(name string, args ...any) *gorm.DB

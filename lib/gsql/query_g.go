@@ -323,8 +323,7 @@ func (b *QueryBuilderG[T]) build(db IDB) IDB {
 func (b *QueryBuilderG[T]) buildStmt(stmt *gorm.Statement, quote func(field string) string) {
 	stmt.Distinct = b.distinct
 	if v, ok := b.from.(ICompactFrom); ok {
-		q := v.Query()
-		stmt.TableExpr = &clause.Expr{SQL: "(?) AS " + v.TableName(), Vars: []any{q.ToExpr()}}
+		stmt.TableExpr = &clause.Expr{SQL: "(?) AS " + v.TableName(), Vars: []any{v.Expr()}}
 		stmt.Table = v.TableName()
 	} else {
 		tn := b.from.TableName()
@@ -368,13 +367,12 @@ func (b *QueryBuilderG[T]) buildStmt(stmt *gorm.Statement, quote func(field stri
 		}
 	}
 	for _, join := range b.joins {
-		e := join.Build()
 		_from := stmt.Clauses["FROM"]
 		fromClause := clause.From{}
 		if v, ok := _from.Expression.(clause.From); ok {
 			fromClause = v
 		}
-		fromClause.Joins = append(fromClause.Joins, clause.Join{Expression: e})
+		fromClause.Joins = append(fromClause.Joins, clause.Join{Expression: join})
 		_from.Expression = fromClause
 		stmt.Clauses["FROM"] = _from
 	}
@@ -387,7 +385,7 @@ func (b *QueryBuilderG[T]) buildStmt(stmt *gorm.Statement, quote func(field stri
 	var orderBy clause.OrderBy
 	for _, order := range b.orders {
 		orderBy.Columns = append(orderBy.Columns, clause.OrderByColumn{
-			Column: clause.Column{Name: order.field.Name()},
+			Column: order.field.ToColumn(),
 			Desc:   !order.asc,
 		})
 	}

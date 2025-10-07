@@ -8,28 +8,9 @@ import (
 	"strings"
 
 	"github.com/donutnomad/gotoolkit/lib/gsql/field"
+	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
-
-type Table struct {
-	Name string
-}
-
-type Table2 struct {
-	Name string
-}
-
-func (t Table2) TableName() string {
-	return t.Name
-}
-
-func (t Table) Ptr() *Table {
-	return &t
-}
-
-func (t *Table) TableName() string {
-	return t.Name
-}
 
 func TableName(name string) Table {
 	return Table{Name: name}
@@ -39,40 +20,23 @@ func TableName2(name string) Table2 {
 	return Table2{Name: name}
 }
 
-func tableNameFn(name string) tableNameImpl {
-	return tableNameImpl{name: name}
+func MapPattern[OUT any, IN any](input field.Pattern[IN]) field.Pattern[OUT] {
+	return field.NewPatternWith[OUT](input.Base)
 }
 
-type tableNameImpl struct {
-	name string
+func MapComparable[OUT any, IN any](input field.Comparable[IN]) field.Comparable[OUT] {
+	return field.NewComparableWith[OUT](input.Base)
 }
 
-func (t tableNameImpl) TableName() string {
-	return t.name
+func Field(sql string, args ...any) field.IField {
+	return field.NewBaseFromSql(Expr(sql, args...))
 }
 
-type templateTable[T any, Model any] struct {
-	Fields    T
-	tableName string
-	query     QueryBuilder
-}
-
-func (t templateTable[T, Model]) ModelType() *Model {
-	var def Model
-	return &def
-}
-
-func (t templateTable[T, Model]) TableName() string {
-	return t.tableName
-}
-
-func (t templateTable[T, Model]) Query() QueryBuilder {
-	return t.query
-}
-
-type ICompactFrom interface {
-	Query() QueryBuilder
-	TableName() string
+func Expr(sql string, args ...any) field.Expression {
+	return field.Expression{
+		Query: sql,
+		Args:  args,
+	}
 }
 
 func DefineTempTable[Model any, ModelT any](types ModelT, builder *QueryBuilder) templateTable[ModelT, Model] {
@@ -134,7 +98,7 @@ func DefineTable[Model any, T any](tableName string, types T, builder *QueryBuil
 	return templateTable[T, Model]{
 		Fields:    *ty,
 		tableName: tableName,
-		query:     *b,
+		expr:      b.ToExpr(),
 	}
 }
 
@@ -195,7 +159,91 @@ func txTable(quote func(field string) string, name string, args ...any) (expr *c
 	return
 }
 
+func addSelects(stmt *gorm.Statement, selects []field.IField) {
+	if len(selects) == 0 {
+		return
+	}
+
+	var columns []clause.Column
+	for _, s := range selects {
+		columns = append(columns, s.ToColumn())
+	}
+
+	stmt.AddClause(clause.Select{
+		Distinct: stmt.Distinct,
+		Columns:  columns,
+	})
+}
+
+type Table struct {
+	Name string
+}
+
+type Table2 struct {
+	Name string
+}
+
+func (t Table2) TableName() string {
+	return t.Name
+}
+
+func (t Table) Ptr() *Table {
+	return &t
+}
+
+func (t *Table) TableName() string {
+	return t.Name
+}
+
 type order struct {
 	field field.IField
 	asc   bool
+}
+
+type safeWriter struct {
+	builder clause.Builder
+}
+
+func (w *safeWriter) WriteByte(b byte) {
+	_ = w.builder.WriteByte(b)
+}
+func (w *safeWriter) WriteString(b string) {
+	_, _ = w.builder.WriteString(b)
+}
+func (w *safeWriter) WriteQuoted(f any) {
+	w.builder.WriteQuoted(f)
+}
+func (w *safeWriter) AddVar(writer *safeWriter, args ...any) {
+	w.builder.AddVar(writer.builder, args...)
+}
+
+func tableNameFn(name string) tableNameImpl {
+	return tableNameImpl{name: name}
+}
+
+type tableNameImpl struct {
+	name string
+}
+
+func (t tableNameImpl) TableName() string {
+	return t.name
+}
+
+type templateTable[T any, Model any] struct {
+	Fields    T
+	tableName string
+	expr      clause.Expression
+}
+
+func (t templateTable[T, Model]) ModelType() *Model {
+	var def Model
+	return &def
+}
+
+func (t templateTable[T, Model]) TableName() string {
+	return t.tableName
+}
+
+func (t templateTable[T, Model]) Expr() clause.Expression {
+	return t.expr
 }

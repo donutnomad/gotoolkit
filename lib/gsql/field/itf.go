@@ -14,6 +14,10 @@ type Expression struct {
 	fn func(writer *strings.Builder)
 }
 
+func (e Expression) Build(builder clause.Builder) {
+	e.ToExpr().Build(builder)
+}
+
 func (e Expression) ToExpr() clause.Expr {
 	return clause.Expr{
 		SQL:  e.Query,
@@ -26,6 +30,7 @@ func (e Expression) Unpack() (string, []any) {
 
 type IField interface {
 	Column() Expression
+	ToColumn() clause.Column
 	Name() string
 	As(alias string) IField
 }

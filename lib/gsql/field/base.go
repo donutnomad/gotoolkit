@@ -3,11 +3,16 @@ package field
 import (
 	"fmt"
 	"strings"
+
+	"gorm.io/gorm/clause"
 )
+
+// TODO: 需要支持: name, table.name, (SELECT name FROM table LIMIT 1) AS name 或者 没有As (SELECT name FROM table LIMIT 1)
 
 type Base struct {
 	tableName  string
 	columnName string
+	alias      string // 别名
 	sql        *Expression
 }
 
@@ -21,6 +26,21 @@ func NewBase(tableName, name string) *Base {
 func NewBaseFromSql(expr Expression) *Base {
 	return &Base{
 		sql: &expr,
+	}
+}
+
+func (f Base) ToColumn() clause.Column {
+	if f.sql != nil {
+		return clause.Column{
+			Name: f.sql.Query,
+			Raw:  true,
+		}
+	}
+	return clause.Column{
+		Table: f.tableName,
+		Name:  f.columnName,
+		Alias: f.alias,
+		Raw:   false,
 	}
 }
 

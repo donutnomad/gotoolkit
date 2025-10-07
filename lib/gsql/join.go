@@ -1,31 +1,30 @@
 package gsql
 
 import (
-	"slices"
-
 	"github.com/donutnomad/gotoolkit/lib/gsql/field"
 	"gorm.io/gorm/clause"
 )
 
 type JoinClause struct {
 	JoinType string
-	Table    interface{ TableName() string }
+	Table    ITableName
 	On       field.Expression
 }
+
 type joiner struct {
 	joinType string
-	table    interface{ TableName() string }
+	table    ITableName
 }
 
-func LeftJoin(table interface{ TableName() string }) joiner {
+func LeftJoin(table ITableName) joiner {
 	return joiner{joinType: "LEFT JOIN", table: table}
 }
 
-func RightJoin(table interface{ TableName() string }) joiner {
+func RightJoin(table ITableName) joiner {
 	return joiner{joinType: "RIGHT JOIN", table: table}
 }
 
-func InnerJoin(table interface{ TableName() string }) joiner {
+func InnerJoin(table ITableName) joiner {
 	return joiner{joinType: "INNER JOIN", table: table}
 }
 
@@ -53,16 +52,37 @@ func (j JoinClause) Or(expr field.Expression) JoinClause {
 	}
 }
 
-func (j JoinClause) Build() clause.Expr {
-	var table = j.Table.TableName()
-	var expr = clause.Expr{}
+func (j JoinClause) Build(builder clause.Builder) {
+	writer := &safeWriter{builder}
+
+	writer.WriteString(j.JoinType)
+	writer.WriteByte(' ')
+
+	var tableName = j.Table.TableName()
 	if v, ok := j.Table.(ICompactFrom); ok {
-		q := v.Query()
-		expr.SQL = j.JoinType + " (?) AS `" + v.TableName() + "` ON ?"
-		expr.Vars = slices.Concat(expr.Vars, []any{q.ToExpr(), j.On.ToExpr()})
-	} else {
-		expr.SQL = j.JoinType + " `" + table + "` ON ?"
-		expr.Vars = slices.Concat(expr.Vars, []any{j.On.ToExpr()})
+		writer.WriteByte('(')
+		writer.AddVar(writer, v.Expr())
+		writer.WriteByte(')')
+		writer.WriteString(" AS ")
 	}
-	return expr
+
+	writer.WriteQuoted(tableName)
+	writer.WriteString(" ON ")
+	writer.AddVar(writer, j.On)
 }
+
+//func (j JoinClause) Build(builder clause.Builder) {
+//	var table = j.Table.TableName()
+//	var expr = clause.Expr{
+//		SQL: j.JoinType,
+//	}
+//	if v, ok := j.Table.(ICompactFrom); ok {
+//		expr.SQL += " (?) AS `" + v.TableName()
+//		expr.Vars = []any{v.Expr()}
+//	} else {
+//		expr.SQL += " `" + table
+//	}
+//	expr.SQL += "` ON ?"
+//	expr.Vars = append(expr.Vars, j.On)
+//	expr.Build(builder)
+//}

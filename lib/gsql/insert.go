@@ -344,19 +344,20 @@ func (valuesWhere) Name() string {
 
 // Build from clause
 func (values valuesWhere) Build(builder clause.Builder) {
+	writer := &safeWriter{builder}
 	if len(values.Columns) > 0 {
-		builder.WriteByte('(')
+		writer.WriteByte('(')
 		for idx, column := range values.Columns {
 			if idx > 0 {
-				builder.WriteByte(',')
+				writer.WriteByte(',')
 			}
-			builder.WriteQuoted(column)
+			writer.WriteQuoted(column)
 		}
-		builder.WriteByte(')')
-		builder.WriteByte(' ')
+		writer.WriteByte(')')
+		writer.WriteByte(' ')
 		values.query.Build(builder)
 	} else {
-		builder.WriteString("DEFAULT VALUES")
+		writer.WriteString("DEFAULT VALUES")
 	}
 }
 

@@ -303,7 +303,7 @@ func TestD(t *testing.T) {
 			gsql.Select().From(tmp2).Where(tmp2.Fields.Rn.Eq(1)),
 		)
 
-		fmt.Println("打印tmp1:", lo.ToPtr(tmp1.Query()).ToSQL())
+		fmt.Println("打印tmp1:", lo.ToPtr(tmp1.Expr()).ToSQL())
 
 		nt := RORTransferBalanceSchema.As("rt")
 
