@@ -167,12 +167,12 @@ func TestD(t *testing.T) {
 		//spew.Dump(gsql.PluckG(u.Age).From(u).Where(u.Age.Eq(12)).Distinct().Find(db))
 		spew.Dump(gsql.SelectG[User](
 			u.ID,
-			gsql.Select(u.Name).From(u).Limit(1).ToField("tt"),
+			gsql.PluckG(u.Name).From(u).Limit(1).ToField("tt"),
 			//(SELECT name FROM users LIMIT 1)
 		).From(u).Where(u.Age.Eq(12)).Distinct().Find(db))
 
-		spew.Dump(gsql.SelectG[User](
-			u.Name,
+		spew.Dump(gsql.SelectG[string](
+			u.Name.As("uuname"),
 		).From(u).Where(u.Name.Like("%$%%", '$')).Find(db),
 		)
 

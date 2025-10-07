@@ -8,11 +8,18 @@ import (
 type Expression = clause.Expression
 
 type IField interface {
-	// ToColumn 只有IsExpr为false时，才可以调用
+	// ToColumn 转换为clause.Column对象，只有非expr模式才支持导出
 	ToColumn() clause.Column
+	// ToExpr 转换为表达式
 	ToExpr() Expression
+	// Name 返回字段名称
+	// 对于expr，返回别名
+	// 对于普通字段，有别名的返回别名，否则返回真实名字
 	Name() string
+	// IsExpr 是否是一个表达式字段
 	IsExpr() bool
+	// As 创建一个别名字段
+	As(alias string) IField
 }
 
 type Number interface {
@@ -88,10 +95,9 @@ func NewPattern[T any](tableName, name string) Pattern[T] {
 	}
 }
 
-func NewPatternWith[T any](base Base) Pattern[T] {
-	b := NewBase(base.tableName, base.columnName)
+func NewPatternWith[T any](b Base) Pattern[T] {
 	return Pattern[T]{
-		Base:           *b,
+		Base:           b,
 		comparableImpl: comparableImpl[T]{IField: b},
 		patternImpl:    patternImpl[T]{IField: b},
 		pointerImpl:    pointerImpl{IField: b},
@@ -130,10 +136,9 @@ func NewComparable[T any](tableName, name string) Comparable[T] {
 	}
 }
 
-func NewComparableWith[T any](base Base) Comparable[T] {
-	b := NewBase(base.tableName, base.columnName)
+func NewComparableWith[T any](b Base) Comparable[T] {
 	return Comparable[T]{
-		Base:           *b,
+		Base:           b,
 		comparableImpl: comparableImpl[T]{IField: b},
 		pointerImpl:    pointerImpl{IField: b},
 	}

@@ -231,6 +231,23 @@ func (b *QueryBuilderG[T]) Find(db IDB) ([]*T, error) {
 	return dest, ret.Error
 }
 
+func (b *QueryBuilderG[T]) ToField(asName string) field.IField {
+	e := b.ToExpr()
+	return field.NewBaseFromSql(clause.Expr{
+		SQL:  e.SQL,
+		Vars: e.Vars,
+	}, asName)
+}
+
+//func (b *QueryBuilderG[T]) ToFieldG(asName string) field.Pattern[T] {
+//	e := b.ToExpr()
+//	base := field.NewBaseFromSql(clause.Expr{
+//		SQL:  e.SQL,
+//		Vars: e.Vars,
+//	}, asName, b.from.TableName())
+//	return field.NewPatternWith[T](*base)
+//}
+
 //// Scan 执行查询
 //func (b *QueryBuilderG[T]) Scan(db IDB) (*T, error) {
 //	var def T

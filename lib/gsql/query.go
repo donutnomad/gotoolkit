@@ -183,12 +183,12 @@ func (b *QueryBuilder) Find(db IDB, dest any) error {
 	return ret.Error
 }
 
-func (b *QueryBuilder) ToField(fieldName string) field.IField {
+func (b *QueryBuilder) ToField(asName string) field.IField {
 	e := b.ToExpr()
 	return field.NewBaseFromSql(clause.Expr{
 		SQL:  e.SQL,
 		Vars: e.Vars,
-	}, fieldName)
+	}, asName)
 }
 
 //// Scan 执行查询
