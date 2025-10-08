@@ -12,7 +12,7 @@ type ExprTo struct {
 	clause.Expression
 }
 
-func (e ExprTo) AsField(name ...string) field.IField {
+func (e ExprTo) AsF(name ...string) field.IField {
 	return FieldExpr(e.Expression, optional(name, ""))
 }
 
@@ -1017,6 +1017,6 @@ func (j *jsonObjectBuilder) Build(builder clause.Builder) {
 	j.toExpr().Build(builder)
 }
 
-func (j *jsonObjectBuilder) AsField(name ...string) field.IField {
-	return j.toExpr().AsField(name...)
+func (j *jsonObjectBuilder) AsF(name ...string) field.IField {
+	return j.toExpr().AsF(name...)
 }

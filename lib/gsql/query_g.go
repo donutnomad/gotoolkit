@@ -231,7 +231,8 @@ func (b *QueryBuilderG[T]) Find(db IDB) ([]*T, error) {
 	return dest, ret.Error
 }
 
-func (b *QueryBuilderG[T]) AsField(asName ...string) field.IField {
+// AsF as field
+func (b *QueryBuilderG[T]) AsF(asName ...string) field.IField {
 	if len(b.selects) == 0 {
 		panic("selects is empty")
 		//if v, ok := b.from.(interface{ ModelType() *T }); ok {
@@ -352,8 +353,11 @@ func (b *QueryBuilderG[T]) buildStmt(stmt *gorm.Statement, quote func(field stri
 			continue
 		}
 		orderBy.Columns = append(orderBy.Columns, clause.OrderByColumn{
-			Column: c.ToColumn(),
-			Desc:   !order.asc,
+			Column: clause.Column{
+				Name: c.FullName(),
+				Raw:  true,
+			},
+			Desc: !order.asc,
 		})
 	}
 	if len(orderBy.Columns) > 0 {

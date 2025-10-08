@@ -187,7 +187,8 @@ func (b *QueryBuilder) Find(db IDB, dest any) error {
 	return ret.Error
 }
 
-func (b *QueryBuilder) AsField(asName ...string) field.IField {
+// AsF as field
+func (b *QueryBuilder) AsF(asName ...string) field.IField {
 	if len(b.selects) == 0 {
 		panic("selects is empty")
 	} else {

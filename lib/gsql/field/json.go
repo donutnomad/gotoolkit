@@ -18,7 +18,7 @@ func NewJsonField[T any](tableName, name string) JsonField[T] {
 
 func fieldName(tableName, name string) string {
 	if tableName == "" {
-		return name
+		return fmt.Sprintf("`%s`", name)
 	}
-	return fmt.Sprintf("%s.%s", tableName, name)
+	return fmt.Sprintf("`%s`.`%s`", tableName, name)
 }

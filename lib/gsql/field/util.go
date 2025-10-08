@@ -102,7 +102,7 @@ func (v ColumnClause) Build(builder clause.Builder) {
 		WriteExpression(v.Expr, builder)
 		if v.Alias != "" {
 			writer.WriteString(" AS ")
-			write(v.Raw, v.Alias)
+			write(false, v.Alias)
 		}
 	} else {
 		writer.WriteQuoted(v.Column)

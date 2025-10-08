@@ -93,6 +93,10 @@ func (f Base) Name() string {
 	return f.columnName
 }
 
+func (f Base) FullName() string {
+	return fieldName(f.tableName, f.columnName)
+}
+
 func (f Base) Alias() string {
 	return f.alias
 }
