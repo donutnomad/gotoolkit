@@ -36,7 +36,7 @@ type IDB interface {
 
 	//Pluck(column string, dest any) *gorm.DB
 	//Unscoped() *gorm.DB
-	//Scan(dest any) *gorm.DB
+	Scan(dest any) *gorm.DB
 	//Exec(sql string, values ...any) *gorm.DB
 	//Take(dest any, conds ...any) *gorm.DB
 }

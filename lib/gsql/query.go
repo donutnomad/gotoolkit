@@ -24,7 +24,11 @@ type baseQueryBuilder struct {
 func (baseQueryBuilder) Select(fields ...field.IField) *baseQueryBuilder {
 	var b = &baseQueryBuilder{}
 	for _, f := range fields {
-		b.selects = append(b.selects, f)
+		if v, ok := f.(field.BaseFields); ok {
+			b.selects = append(b.selects, v...)
+		} else {
+			b.selects = append(b.selects, f)
+		}
 	}
 	return b
 }

@@ -110,6 +110,12 @@ func (f Pattern[T]) WithName(name string) Pattern[T] {
 	return NewPattern[T](f.Base.tableName, name)
 }
 
+func (f Pattern[T]) WithAlias(alias string) Pattern[T] {
+	b := f.Base
+	b.alias = alias
+	return NewPatternWith[T](b)
+}
+
 func (f Pattern[T]) FieldType() T {
 	var def T
 	return def
@@ -157,6 +163,12 @@ func (f Comparable[T]) WithTable(tableName interface{ TableName() string }, fiel
 
 func (f Comparable[T]) WithName(fieldName string) Comparable[T] {
 	return NewComparable[T](f.Base.tableName, fieldName)
+}
+
+func (f Comparable[T]) WithAlias(alias string) Comparable[T] {
+	b := f.Base
+	b.alias = alias
+	return NewComparableWith[T](b)
 }
 
 // TODO: 缺少一个BETWEEN操作符

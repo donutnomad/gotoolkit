@@ -110,3 +110,11 @@ func (f Base) As(alias string) IField {
 	b.alias = alias
 	return b
 }
+
+func (f Base) AsPrefix(prefix string) IField {
+	return f.As(prefix + f.columnName)
+}
+
+func (f Base) AsSuffix(suffix string) IField {
+	return f.As(f.columnName + suffix)
+}

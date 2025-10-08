@@ -120,6 +120,19 @@ func generateModelCode(model *gormparse.GormModelInfo) string {
 	builder.WriteString("\treturn &t.fieldType\n")
 	builder.WriteString("}\n\n")
 
+	// 生成AllFields方法
+	builder.WriteString(fmt.Sprintf("func (t %s) AllFields() field.BaseFields {\n", structName))
+	builder.WriteString("\treturn field.BaseFields{\n")
+	for _, field := range model.Fields {
+		fieldType := mapFieldType(field.Type)
+		if fieldType == "" {
+			continue // 跳过JSON字段
+		}
+		builder.WriteString(fmt.Sprintf("\tt.%s,\n", field.Name))
+	}
+	builder.WriteString("\t}\n")
+	builder.WriteString("}\n\n")
+
 	// 生成变量实例
 	varName := modelName + "Schema"
 	builder.WriteString(fmt.Sprintf("var %s = %s{\n", varName, structName))
