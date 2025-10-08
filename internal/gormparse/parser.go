@@ -13,6 +13,7 @@ type GormFieldInfo struct {
 	ColumnName string // 数据库列名
 	IsEmbedded bool   // 是否为嵌入字段
 	SourceType string // 字段来源类型,为空表示来自结构体本身,否则表示来自嵌入的结构体
+	Tag        string // 字段标签
 }
 
 // GormModelInfo GORM模型信息
@@ -76,6 +77,7 @@ func ParseGormModel(structInfo *StructInfo) *GormModelInfo {
 			Name:       field.Name,
 			Type:       field.Type,
 			SourceType: field.SourceType, // 复制来源信息
+			Tag:        field.Tag,        // 保存标签信息
 		}
 
 		// 解析列名

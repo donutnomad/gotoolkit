@@ -4,18 +4,55 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+// FieldFlag 字段标志位
+type FieldFlag uint32
+
+const (
+	FlagNone          FieldFlag = 0
+	FlagPrimaryKey    FieldFlag = 1 << 0 // 主键
+	FlagUniqueIndex   FieldFlag = 1 << 1 // 唯一索引
+	FlagIndex         FieldFlag = 1 << 2 // 普通索引
+	FlagAutoIncrement FieldFlag = 1 << 3 // 自增
+)
+
 type Base struct {
 	tableName  string
 	columnName string
 	alias      string // 别名
 	sql        Expression
+	flags      FieldFlag // 字段标志
 }
 
-func NewBase(tableName, name string) *Base {
+func NewBase(tableName, name string, flags ...FieldFlag) *Base {
+	var flag FieldFlag = FlagNone
+	if len(flags) > 0 {
+		flag = flags[0]
+	}
 	return &Base{
 		tableName:  tableName,
 		columnName: name,
+		flags:      flag,
 	}
+}
+
+// Flags 返回字段标志
+func (f Base) Flags() FieldFlag {
+	return f.flags
+}
+
+// HasFlag 判断是否有某个标志
+func (f Base) HasFlag(flag FieldFlag) bool {
+	return f.flags&flag != 0
+}
+
+// IsPrimaryKey 是否为主键
+func (f Base) IsPrimaryKey() bool {
+	return f.HasFlag(FlagPrimaryKey)
+}
+
+// IsUniqueIndex 是否为唯一索引
+func (f Base) IsUniqueIndex() bool {
+	return f.HasFlag(FlagUniqueIndex)
 }
 
 func NewBaseFromSql(expr Expression, name string) *Base {

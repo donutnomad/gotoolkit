@@ -33,6 +33,10 @@ func Field(sql string, args ...any) field.IField {
 	return field.NewBaseFromSql(Expr(sql, args...), "")
 }
 
+func FieldExpr(expr field.Expression, name string) field.IField {
+	return field.NewBaseFromSql(expr, name)
+}
+
 func Expr(sql string, args ...any) field.Expression {
 	return clause.Expr{
 		SQL:  sql,
@@ -144,6 +148,15 @@ func addSelects(stmt *gorm.Statement, selects []field.IField) {
 	if len(selects) == 0 {
 		return
 	}
+	var m = make(map[string]struct{}, len(selects))
+	for _, s := range selects {
+		_, ok := m[s.Name()]
+		if ok {
+			panic(fmt.Sprintf("conflict select field name: `%s`, check your select fields", s.Name()))
+		}
+		m[s.Name()] = struct{}{}
+	}
+
 	stmt.AddClause(clause.Select{
 		Distinct: stmt.Distinct,
 		Expression: columnClause{

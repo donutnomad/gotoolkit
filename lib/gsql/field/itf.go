@@ -7,6 +7,12 @@ import (
 
 type Expression = clause.Expression
 
+type ExpressionTo interface {
+	Expression
+	//ToField(name string) IField
+	AsField(name string) IField
+}
+
 type IField interface {
 	// ToColumn 转换为clause.Column对象，只有非expr模式才支持导出
 	ToColumn() clause.Column
@@ -22,38 +28,18 @@ type IField interface {
 	As(alias string) IField
 }
 
-type Number interface {
-	~int | ~int8 | ~int16 | ~int32 | ~int64 | ~uint | ~uint8 | ~uint16 | ~uint32 | ~uint64 | ~uintptr
-}
-
-type INumber[T any] interface {
-	IField
-	Gt(value T) Expression
-	GtOpt(value mo.Option[T]) Expression
-	GtField(other INumber[T]) Expression
-	Gte(value T) Expression
-	GteOpt(value mo.Option[T]) Expression
-	GteField(other INumber[T]) Expression
-	Lt(value T) Expression
-	LtOpt(value mo.Option[T]) Expression
-	LtField(other INumber[T]) Expression
-	Lte(value T) Expression
-	LteOpt(value mo.Option[T]) Expression
-	LteField(other INumber[T]) Expression
-}
-
 type IPointer interface {
 	IField
 	NotNil() Expression
 	IsNil() Expression
 }
 
-type IString[T any] interface {
+type IPattern[T any] interface {
 	IField
-	NotLike(value T) Expression
-	NotLikeOpt(value mo.Option[T]) Expression
-	Like(value T) Expression
-	LikeOpt(value mo.Option[T]) Expression
+	NotLike(value T, escape ...byte) Expression
+	NotLikeOpt(value mo.Option[T], escape ...byte) Expression
+	Like(value T, escape ...byte) Expression
+	LikeOpt(value mo.Option[T], escape ...byte) Expression
 	Contains(value T) Expression
 	ContainsOpt(value mo.Option[T]) Expression
 	HasPrefix(value T) Expression
@@ -85,8 +71,8 @@ type Pattern[T any] struct {
 	pointerImpl
 }
 
-func NewPattern[T any](tableName, name string) Pattern[T] {
-	b := NewBase(tableName, name)
+func NewPattern[T any](tableName, name string, flags ...FieldFlag) Pattern[T] {
+	b := NewBase(tableName, name, flags...)
 	return Pattern[T]{
 		Base:           *b,
 		comparableImpl: comparableImpl[T]{IField: b},
@@ -121,14 +107,18 @@ func (f Pattern[T]) FieldType() T {
 	return def
 }
 
+func (f Pattern[T]) Build(builder clause.Builder) {
+	f.Base.ToExpr().Build(builder)
+}
+
 type Comparable[T any] struct {
 	Base
 	comparableImpl[T]
 	pointerImpl
 }
 
-func NewComparable[T any](tableName, name string) Comparable[T] {
-	b := NewBase(tableName, name)
+func NewComparable[T any](tableName, name string, flags ...FieldFlag) Comparable[T] {
+	b := NewBase(tableName, name, flags...)
 	return Comparable[T]{
 		Base:           *b,
 		comparableImpl: comparableImpl[T]{IField: b},
@@ -149,6 +139,10 @@ func (f Comparable[T]) FieldType() T {
 	return def
 }
 
+func (f Comparable[T]) Build(builder clause.Builder) {
+	f.Base.ToExpr().Build(builder)
+}
+
 func (f Comparable[T]) WithTable(tableName interface{ TableName() string }, fieldNames ...string) Comparable[T] {
 	return NewComparable[T](tableName.TableName(), optional(fieldNames, f.Base.Name()))
 }
@@ -159,7 +153,7 @@ func (f Comparable[T]) WithName(fieldName string) Comparable[T] {
 
 // TODO: 缺少一个BETWEEN操作符
 // TODO: 增加一个Blob类型(支持比较 + LIKE(字符串操作))
-// TODO: 增加一个JSON类型（不支持比较)
+// TODO: 增加一个JSON类型（=,!=,LIKE操作符)
 // TODO: 增加一个空间类型（不支持比较)
 
 // | 数据类型类别       | 具体数据类型 (示例)                                | `=`    | `!=` (`<>`) | `>` `<` `>=` `<=` | `BETWEEN` (`AND`) | `LIKE` ( `%` `_` ) | `IN` (`()`) | `IS NULL` (`IS NOT NULL`) | 备注                                                              |

@@ -23,8 +23,8 @@ func generateGormQueryFileForMultiple(filename string, models []*gormparse.GormM
 
 	// 导入
 	builder.WriteString("import (\n")
-	builder.WriteString("\t\"github.com/donutnomad/gotoolkit/lib/gormgen/field\"\n")
-	builder.WriteString("\tgsql \"github.com/donutnomad/gotoolkit/lib/gormgen\"\n")
+	builder.WriteString("\t\"github.com/donutnomad/gotoolkit/lib/gsql/field\"\n")
+	builder.WriteString("\tgsql \"github.com/donutnomad/gotoolkit/lib/gsql\"\n")
 	builder.WriteString(")\n\n")
 
 	// 为每个模型生成代码
@@ -132,7 +132,12 @@ func generateModelCode(model *gormparse.GormModelInfo) string {
 			continue // 跳过JSON字段
 		}
 		constructor := getFieldConstructor(fieldType)
-		builder.WriteString(fmt.Sprintf("\t%s: %s(\"%s\", \"%s\"),\n", field.Name, constructor, model.TableName, field.ColumnName))
+		flags := getFieldFlags(field.Tag)
+		if flags != "" {
+			builder.WriteString(fmt.Sprintf("\t%s: %s(\"%s\", \"%s\", %s),\n", field.Name, constructor, model.TableName, field.ColumnName, flags))
+		} else {
+			builder.WriteString(fmt.Sprintf("\t%s: %s(\"%s\", \"%s\"),\n", field.Name, constructor, model.TableName, field.ColumnName))
+		}
 	}
 	builder.WriteString(fmt.Sprintf("\t%s: %s{},\n", "fieldType", rawModelName))
 
@@ -213,4 +218,84 @@ func getFieldConstructor(fieldType string) string {
 	}
 
 	return "field.NewComparable[any]"
+}
+
+// getFieldFlags 根据字段标签获取标志位
+func getFieldFlags(tag string) string {
+	if tag == "" {
+		return ""
+	}
+
+	// 解析gorm标签
+	gormTags := parseGormTag(tag)
+
+	var flags []string
+
+	// 检查是否为主键
+	if _, hasPrimaryKey := gormTags["primarykey"]; hasPrimaryKey {
+		flags = append(flags, "field.FlagPrimaryKey")
+	}
+	if _, hasPrimaryKey := gormTags["primaryKey"]; hasPrimaryKey {
+		flags = append(flags, "field.FlagPrimaryKey")
+	}
+
+	// 检查是否有唯一索引
+	if uniqueIdx, hasUniqueIndex := gormTags["uniqueIndex"]; hasUniqueIndex || uniqueIdx != "" {
+		flags = append(flags, "field.FlagUniqueIndex")
+	}
+	if uniqueIdx, hasUniqueIndex := gormTags["unique"]; hasUniqueIndex || uniqueIdx != "" {
+		flags = append(flags, "field.FlagUniqueIndex")
+	}
+
+	// 检查是否有普通索引
+	if idx, hasIndex := gormTags["index"]; hasIndex || idx != "" {
+		flags = append(flags, "field.FlagIndex")
+	}
+
+	// 检查是否自增
+	if _, hasAutoIncrement := gormTags["autoIncrement"]; hasAutoIncrement {
+		flags = append(flags, "field.FlagAutoIncrement")
+	}
+
+	if len(flags) == 0 {
+		return ""
+	}
+
+	// 使用 | 组合多个标志
+	return strings.Join(flags, " | ")
+}
+
+// parseGormTag 解析gorm标签
+func parseGormTag(tag string) map[string]string {
+	result := make(map[string]string)
+
+	// 查找gorm标签
+	start := strings.Index(tag, `gorm:"`)
+	if start == -1 {
+		return result
+	}
+
+	start += 6 // 跳过 gorm:"
+	end := strings.Index(tag[start:], `"`)
+	if end == -1 {
+		return result
+	}
+
+	gormTag := tag[start : start+end]
+
+	// 解析标签内的各个部分
+	parts := strings.Split(gormTag, ";")
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if strings.Contains(part, ":") {
+			kv := strings.SplitN(part, ":", 2)
+			if len(kv) == 2 {
+				result[kv[0]] = kv[1]
+			}
+		} else {
+			result[part] = ""
+		}
+	}
+
+	return result
 }

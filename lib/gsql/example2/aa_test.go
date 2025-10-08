@@ -2,6 +2,7 @@ package example2
 
 import (
 	"testing"
+	"time"
 
 	"github.com/davecgh/go-spew/spew"
 	gsql "github.com/donutnomad/gotoolkit/lib/gsql"
@@ -167,13 +168,27 @@ func TestD(t *testing.T) {
 		//spew.Dump(gsql.PluckG(u.Age).From(u).Where(u.Age.Eq(12)).Distinct().Find(db))
 		spew.Dump(gsql.SelectG[User](
 			u.ID,
-			gsql.PluckG(u.Name).From(u).Limit(1).ToField("tt"),
+			gsql.PluckG(u.Name).From(u).Limit(1).AsField("tt"),
+			//gsql.PluckG(u.Name).From(u).Limit(1).AsField("tt"),
 			//(SELECT name FROM users LIMIT 1)
 		).From(u).Where(u.Age.Eq(12)).Distinct().Find(db))
 
-		spew.Dump(gsql.SelectG[string](
-			u.Name.As("uuname"),
-		).From(u).Where(u.Name.Like("%$%%", '$')).Find(db),
+		type TmpRet2 struct {
+			Name string
+			UUID string
+			Now  time.Time
+			Now2 int64
+			Now3 time.Time
+		}
+
+		spew.Dump(gsql.SelectG[TmpRet2](
+			gsql.IF(u.Name.Eq("bb"), gsql.Primitive("Big"), u.Name).AsField("name"),
+			gsql.UUID().AsField("uuid"),
+			gsql.NOW().AsField("now"),
+			gsql.UNIX_TIMESTAMP().AsField("now2"),
+			//gsql.FROM_UNIXTIME(gsql.Expr("? + 3600", u.Age)).AsField("now3"),
+			gsql.FROM_UNIXTIME(gsql.Primitive(1222222)).AsField("now3"),
+		).From(u).Find(db),
 		)
 
 		//var rets []string

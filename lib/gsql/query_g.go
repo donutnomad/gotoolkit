@@ -231,7 +231,7 @@ func (b *QueryBuilderG[T]) Find(db IDB) ([]*T, error) {
 	return dest, ret.Error
 }
 
-func (b *QueryBuilderG[T]) ToField(asName string) field.IField {
+func (b *QueryBuilderG[T]) AsField(asName string) field.IField {
 	if len(b.selects) == 0 {
 		panic("selects is empty")
 		//if v, ok := b.from.(interface{ ModelType() *T }); ok {
