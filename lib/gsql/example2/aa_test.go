@@ -12,7 +12,7 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-func TestD(t *testing.T) {
+func collectDB(t *testing.T) gsql.IDB {
 	// 先连接 MySQL 服务器(不指定数据库)
 	dsnWithoutDB := "root:123456@tcp(127.0.0.1:3306)/?charset=utf8mb4&parseTime=True&loc=Local"
 	_db, err := gorm.Open(mysql.Open(dsnWithoutDB), &gorm.Config{
@@ -44,7 +44,77 @@ func TestD(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	db := gsql.NewDefaultGormDB(_db)
+	return gsql.NewDefaultGormDB(_db)
+}
+
+func TestD1(t *testing.T) {
+	db := collectDB(t)
+	var u = UserSchema
+
+	virtualTable := gsql.DefineTable[User]("combined",
+		struct {
+			UserSchemaType
+		}{
+			UserSchemaType: UserSchema,
+		},
+		gsql.UnionAll(
+			gsql.Select().From(u),
+			gsql.Select().From(u),
+			gsql.Select().From(u),
+			gsql.Select().From(u),
+		),
+	)
+	_ = virtualTable
+
+	// SELECT
+	//		0 as id,
+	//		u.uid as uid,
+	//		'' as company_name,
+	//		'' as company_id,
+	//		0 as table_company_id,
+	//		NULL as banks,
+	//		'' as wallet_name,
+	//		'' as wallet_address,
+	//		'' as wallet_public_key,
+	//		JSON_OBJECT() as attribute,
+	//		0 as gldb_account,
+	//		0 as user_onboarding_request_status,
+	//		'' as comment,
+	//		'' as failed_reason,
+	//		false as notified,
+	//		u.created_at,
+	//		u.updated_at,
+	//		u.status as user_status
+	//	FROM ` + model.User{}.TableName() + ` AS u
+	//	WHERE u.client = true
+
+	var all []User
+	err := gsql.Select(
+		gsql.NULL().AsField(),
+		gsql.NOW().AsField(u.Name.Name()),
+		gsql.Primitive(0).AsField("id"),
+		gsql.Primitive("").AsField("company_name"),
+		gsql.JSON_OBJECT().
+			Add("name", u.Name).
+			AsField("gg"),
+	).From(u).Where(
+		u.Age.GteF(
+			gsql.Pluck(
+				gsql.AVG(u.Age).AsField(),
+			).From(u).AsField(),
+		),
+		gsql.Exists(
+			gsql.Select(gsql.Primitive(1).AsField()).From(u),
+		),
+	).Find(db, &all)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spew.Dump(all)
+}
+
+func TestD(t *testing.T) {
+	db := collectDB(t)
 
 	//db.Create(&User{
 	//	Name: "张三",

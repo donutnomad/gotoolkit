@@ -33,8 +33,8 @@ func Field(sql string, args ...any) field.IField {
 	return field.NewBaseFromSql(Expr(sql, args...), "")
 }
 
-func FieldExpr(expr field.Expression, name string) field.IField {
-	return field.NewBaseFromSql(expr, name)
+func FieldExpr(expr field.Expression, alias string) field.IField {
+	return field.NewBaseFromSql(expr, alias)
 }
 
 func Expr(sql string, args ...any) field.Expression {
@@ -48,15 +48,17 @@ func DefineTempTable[Model any, ModelT any](types ModelT, builder *QueryBuilder)
 	return DefineTable[Model, ModelT](fmt.Sprintf("%s%d", "temp_", rand.N(32)), types, builder)
 }
 
-func DefineTempTableAny[T any](types T, builder *QueryBuilder) templateTable[T, any] {
-	return DefineTable[any, T](fmt.Sprintf("%s%d", "temp_", rand.N(32)), types, builder)
+func DefineTempTableAny[ModelT any](types ModelT, builder *QueryBuilder) templateTable[ModelT, any] {
+	return DefineTable[any, ModelT](fmt.Sprintf("%s%d", "temp_", rand.N(32)), types, builder)
 }
 
-func DefineTable[Model any, T any](tableName string, types T, builder *QueryBuilder) templateTable[T, Model] {
-	b := builder.Clone()
-
-	if len(b.selects) == 0 {
-		b.selects = append(b.selects, Star)
+func DefineTable[Model any, ModelT any](tableName string, types ModelT, builder field.IToExpr) templateTable[ModelT, Model] {
+	if v, ok := builder.(*QueryBuilder); ok {
+		if len(v.selects) == 0 {
+			b := v.Clone()
+			b.selects = append(b.selects, Star)
+			builder = b
+		}
 	}
 
 	var newTable = reflect.ValueOf(tableNameFn(tableName))
@@ -100,10 +102,10 @@ func DefineTable[Model any, T any](tableName string, types T, builder *QueryBuil
 		}
 	}
 
-	return templateTable[T, Model]{
+	return templateTable[ModelT, Model]{
 		Fields:    *ty,
 		tableName: tableName,
-		expr:      b.ToExpr(),
+		expr:      builder.ToExpr(),
 	}
 }
 
@@ -251,6 +253,6 @@ func (t templateTable[T, Model]) TableName() string {
 	return t.tableName
 }
 
-func (t templateTable[T, Model]) Expr() clause.Expression {
+func (t templateTable[T, Model]) ToExpr() clause.Expression {
 	return t.expr
 }

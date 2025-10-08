@@ -9,8 +9,12 @@ type Expression = clause.Expression
 
 type ExpressionTo interface {
 	Expression
+	AsField(name ...string) IField
 	//ToField(name string) IField
-	AsField(name string) IField
+}
+
+type IToExpr interface {
+	ToExpr() Expression
 }
 
 type IField interface {
@@ -26,6 +30,7 @@ type IField interface {
 	IsExpr() bool
 	// As 创建一个别名字段
 	As(alias string) IField
+	Alias() string
 }
 
 type IPointer interface {
@@ -52,10 +57,10 @@ type IComparable[T any] interface {
 	IField
 	Eq(value T) Expression
 	EqOpt(value mo.Option[T]) Expression
-	EqF(other IComparable[T]) Expression
+	EqF(other IField) Expression
 	Not(value T) Expression
 	NotOpt(value mo.Option[T]) Expression
-	NotField(other IComparable[T]) Expression
+	NotF(other IField) Expression
 	In(values ...T) Expression
 	NotIn(values ...T) Expression
 }

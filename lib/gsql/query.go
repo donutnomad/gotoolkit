@@ -13,10 +13,7 @@ func Select(fields ...field.IField) *baseQueryBuilder {
 	return baseQueryBuilder{}.Select(fields...)
 }
 
-func Pluck[T any, Field interface {
-	field.IField
-	field.IFieldType[T]
-}](f Field) *baseQueryBuilder {
+func Pluck(f field.IField) *baseQueryBuilder {
 	return Select(f)
 }
 
@@ -61,7 +58,7 @@ func (b *QueryBuilder) String() string {
 	return b.ToSQL()
 }
 
-func (b *QueryBuilder) ToExpr() clause.Expr {
+func (b *QueryBuilder) ToExpr() clause.Expression {
 	return b.as().ToExpr()
 }
 
@@ -181,7 +178,7 @@ func (b *QueryBuilder) Last(db IDB, dest any) error {
 }
 
 func (b *QueryBuilder) Find(db IDB, dest any) error {
-	ret := b.build(db).Find(&dest)
+	ret := b.build(db).Find(dest)
 	if ret.RowsAffected == 0 {
 		return nil
 	} else if ret.Error != nil {
@@ -190,15 +187,11 @@ func (b *QueryBuilder) Find(db IDB, dest any) error {
 	return ret.Error
 }
 
-func (b *QueryBuilder) ToField(asName string) field.IField {
+func (b *QueryBuilder) AsField(asName ...string) field.IField {
 	if len(b.selects) == 0 {
 		panic("selects is empty")
 	} else {
 		b.selects = b.selects[0:1]
 	}
-	e := b.ToExpr()
-	return field.NewBaseFromSql(clause.Expr{
-		SQL:  e.SQL,
-		Vars: e.Vars,
-	}, asName)
+	return FieldExpr(b.ToExpr(), optional(asName, ""))
 }

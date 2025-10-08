@@ -55,10 +55,10 @@ func (f Base) IsUniqueIndex() bool {
 	return f.HasFlag(FlagUniqueIndex)
 }
 
-func NewBaseFromSql(expr Expression, name string) *Base {
+func NewBaseFromSql(expr Expression, alias string) *Base {
 	return &Base{
 		sql:   expr,
-		alias: name,
+		alias: alias,
 	}
 }
 
@@ -91,6 +91,10 @@ func (f Base) Name() string {
 		return f.alias
 	}
 	return f.columnName
+}
+
+func (f Base) Alias() string {
+	return f.alias
 }
 
 // As 创建一个别名字段

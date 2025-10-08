@@ -231,7 +231,7 @@ func (b *QueryBuilderG[T]) Find(db IDB) ([]*T, error) {
 	return dest, ret.Error
 }
 
-func (b *QueryBuilderG[T]) AsField(asName string) field.IField {
+func (b *QueryBuilderG[T]) AsField(asName ...string) field.IField {
 	if len(b.selects) == 0 {
 		panic("selects is empty")
 		//if v, ok := b.from.(interface{ ModelType() *T }); ok {
@@ -242,11 +242,7 @@ func (b *QueryBuilderG[T]) AsField(asName string) field.IField {
 	} else {
 		b.selects = b.selects[0:1]
 	}
-	e := b.ToExpr()
-	return field.NewBaseFromSql(clause.Expr{
-		SQL:  e.SQL,
-		Vars: e.Vars,
-	}, asName)
+	return FieldExpr(b.ToExpr(), optional(asName, ""))
 }
 
 func (b *QueryBuilderG[T]) firstLast(db IDB, order, desc bool) (*T, error) {
@@ -313,7 +309,7 @@ func (b *QueryBuilderG[T]) build(db IDB) IDB {
 func (b *QueryBuilderG[T]) buildStmt(stmt *gorm.Statement, quote func(field string) string) {
 	stmt.Distinct = b.distinct
 	if v, ok := b.from.(ICompactFrom); ok {
-		stmt.TableExpr = &clause.Expr{SQL: "(?) AS " + v.TableName(), Vars: []any{v.Expr()}}
+		stmt.TableExpr = &clause.Expr{SQL: "(?) AS " + v.TableName(), Vars: []any{v.ToExpr()}}
 		stmt.Table = v.TableName()
 	} else {
 		tn := b.from.TableName()

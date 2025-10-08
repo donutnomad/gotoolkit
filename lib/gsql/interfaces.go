@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 
+	"github.com/donutnomad/gotoolkit/lib/gsql/field"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -14,7 +15,7 @@ type DBResult struct {
 }
 
 type ICompactFrom interface {
-	Expr() clause.Expression
+	field.IToExpr
 	TableName() string
 }
 

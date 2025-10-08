@@ -9,14 +9,26 @@ import (
 )
 
 type ExprTo struct {
-	clause.Expr
+	clause.Expression
 }
 
-func (e ExprTo) AsField(name string) field.IField {
-	return FieldExpr(e.Expr, name)
+func (e ExprTo) AsField(name ...string) field.IField {
+	return FieldExpr(e.Expression, optional(name, ""))
+}
+
+func (e ExprTo) ToExpr() field.Expression {
+	return e.Expression
 }
 
 var Star field.IField = field.NewBase("", "*")
+
+type primitive interface {
+	~int | ~int8 | ~int16 | ~int32 | ~int64 | ~uint | ~uint8 | ~uint16 | ~uint32 | ~uint64 | ~float32 | ~float64 | ~string
+}
+
+func Primitive[T primitive](value T) field.ExpressionTo {
+	return ExprTo{Expr("?", value)}
+}
 
 // FALSE 返回布尔值假
 // SELECT FALSE;
@@ -852,14 +864,6 @@ func GROUP_CONCAT(expr field.Expression, separator ...string) field.ExpressionTo
 	}}
 }
 
-type primitive interface {
-	~int | ~int8 | ~int16 | ~int32 | ~int64 | ~uint | ~uint8 | ~uint16 | ~uint32 | ~uint64 | ~float32 | ~float64 | ~string
-}
-
-func Primitive[T primitive](value T) field.Expression {
-	return Expr("?", value)
-}
-
 // ==================== 流程控制函数 ====================
 
 // IF 条件判断函数，如果条件为真返回第一个值，否则返回第二个值
@@ -967,4 +971,52 @@ func INET_NTOA(expr field.Expression) field.ExpressionTo {
 		SQL:  "INET_NTOA(?)",
 		Vars: []any{expr},
 	}}
+}
+
+// ==================== JSON 函数 ====================
+
+// JSON_OBJECT 创建 JSON 对象，接受成对的键值参数（key1, value1, key2, value2, ...）
+// SELECT JSON_OBJECT('name', 'John', 'age', 30);
+// SELECT JSON_OBJECT('id', users.id, 'name', users.name) FROM users;
+// SELECT JSON_OBJECT('total', COUNT(*), 'sum', SUM(amount)) FROM orders;
+// SELECT JSON_OBJECT('user', users.name, 'email', users.email, 'status', users.status) FROM users;
+func JSON_OBJECT(pairs ...lo.Entry[string, field.Expression]) *jsonObjectBuilder {
+	return &jsonObjectBuilder{
+		pairs: lo.FromEntries(pairs),
+	}
+}
+
+type jsonObjectBuilder struct {
+	pairs map[string]field.Expression
+}
+
+func (j *jsonObjectBuilder) Add(key string, value field.Expression) *jsonObjectBuilder {
+	j.pairs[key] = value
+	return j
+}
+
+func (j *jsonObjectBuilder) toExpr() field.ExpressionTo {
+	placeholders := ""
+	for i := range len(j.pairs) * 2 {
+		if i > 0 {
+			placeholders += ", "
+		}
+		placeholders += "?"
+	}
+	var unpack = make([]any, 0, len(j.pairs)*2)
+	for k, v := range j.pairs {
+		unpack = append(unpack, k, v)
+	}
+	return ExprTo{clause.Expr{
+		SQL:  fmt.Sprintf("JSON_OBJECT(%s)", placeholders),
+		Vars: unpack,
+	}}
+}
+
+func (j *jsonObjectBuilder) Build(builder clause.Builder) {
+	j.toExpr().Build(builder)
+}
+
+func (j *jsonObjectBuilder) AsField(name ...string) field.IField {
+	return j.toExpr().AsField(name...)
 }

@@ -24,8 +24,8 @@ func (f comparableImpl[T]) EqOpt(value mo.Option[T]) Expression {
 	return f.Eq(value.MustGet())
 }
 
-func (f comparableImpl[T]) EqF(other IComparable[T]) Expression {
-	return f.operateField(other, "=")
+func (f comparableImpl[T]) EqF(other IField) Expression {
+	return f.operateField2(other, "=")
 }
 
 func (f comparableImpl[T]) Not(value T) Expression {
@@ -39,8 +39,8 @@ func (f comparableImpl[T]) NotOpt(value mo.Option[T]) Expression {
 	return f.Not(value.MustGet())
 }
 
-func (f comparableImpl[T]) NotField(other IComparable[T]) Expression {
-	return f.operateField(other, "!=")
+func (f comparableImpl[T]) NotF(other IField) Expression {
+	return f.operateField2(other, "!=")
 }
 
 func (f comparableImpl[T]) In(values ...T) Expression {
@@ -68,8 +68,8 @@ func (f comparableImpl[T]) GtOpt(value mo.Option[T]) Expression {
 	return f.Gt(value.MustGet())
 }
 
-func (f comparableImpl[T]) GtField(other IComparable[T]) Expression {
-	return f.operateField(other, ">")
+func (f comparableImpl[T]) GtF(other IField) Expression {
+	return f.operateField2(other, ">")
 }
 
 func (f comparableImpl[T]) Gte(value T) Expression {
@@ -83,8 +83,8 @@ func (f comparableImpl[T]) GteOpt(value mo.Option[T]) Expression {
 	return f.Gte(value.MustGet())
 }
 
-func (f comparableImpl[T]) GteField(other IComparable[T]) Expression {
-	return f.operateField(other, ">=")
+func (f comparableImpl[T]) GteF(other IField) Expression {
+	return f.operateField2(other, ">=")
 }
 
 func (f comparableImpl[T]) Lt(value T) Expression {
@@ -98,8 +98,8 @@ func (f comparableImpl[T]) LtOpt(value mo.Option[T]) Expression {
 	return f.Lt(value.MustGet())
 }
 
-func (f comparableImpl[T]) LtField(other IComparable[T]) Expression {
-	return f.operateField(other, "<")
+func (f comparableImpl[T]) LtF(other IField) Expression {
+	return f.operateField2(other, "<")
 }
 
 func (f comparableImpl[T]) Lte(value T) Expression {
@@ -113,17 +113,20 @@ func (f comparableImpl[T]) LteOpt(value mo.Option[T]) Expression {
 	return f.Lte(value.MustGet())
 }
 
-func (f comparableImpl[T]) LteField(other IComparable[T]) Expression {
-	return f.operateField(other, "<=")
+func (f comparableImpl[T]) LteF(other IField) Expression {
+	return f.operateField2(other, "<=")
 }
 
 func (f comparableImpl[T]) operateValue(value any, operator string) Expression {
+	return f.operateValue2(f.ToColumn(), value, operator)
+}
+
+func (f comparableImpl[T]) operateValue2(column any, value any, operator string) Expression {
 	if f.IsExpr() {
 		panic("[comparableImpl] cannot operate on expr")
 	}
 
 	var expr clause.Expression
-	var column = f.ToColumn()
 	switch operator {
 	case "=":
 		expr = clause.Eq{Column: column, Value: value}
@@ -152,4 +155,8 @@ func (f comparableImpl[T]) operateField(other IComparable[T], operator string) E
 		panic("[comparableImpl] cannot operate on expr")
 	}
 	return f.operateValue(other.ToColumn(), operator)
+}
+
+func (f comparableImpl[T]) operateField2(other IField, operator string) Expression {
+	return f.operateValue2(f.ToColumn(), other.ToExpr(), operator)
 }

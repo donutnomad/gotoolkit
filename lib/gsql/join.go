@@ -61,7 +61,7 @@ func (j JoinClause) Build(builder clause.Builder) {
 	var tableName = j.Table.TableName()
 	if v, ok := j.Table.(ICompactFrom); ok {
 		writer.WriteByte('(')
-		writer.AddVar(writer, v.Expr())
+		writer.AddVar(writer, v.ToExpr())
 		writer.WriteByte(')')
 		writer.WriteString(" AS ")
 	}
