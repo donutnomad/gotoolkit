@@ -5,17 +5,6 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-type JoinClause struct {
-	JoinType string
-	Table    ITableName
-	On       field.Expression
-}
-
-type joiner struct {
-	joinType string
-	table    ITableName
-}
-
 func LeftJoin(table ITableName) joiner {
 	return joiner{joinType: "LEFT JOIN", table: table}
 }
@@ -26,6 +15,17 @@ func RightJoin(table ITableName) joiner {
 
 func InnerJoin(table ITableName) joiner {
 	return joiner{joinType: "INNER JOIN", table: table}
+}
+
+type JoinClause struct {
+	JoinType string
+	Table    ITableName
+	On       field.Expression
+}
+
+type joiner struct {
+	joinType string
+	table    ITableName
 }
 
 func (j joiner) On(expr field.Expression) JoinClause {
@@ -70,19 +70,3 @@ func (j JoinClause) Build(builder clause.Builder) {
 	writer.WriteString(" ON ")
 	writer.AddVar(writer, j.On)
 }
-
-//func (j JoinClause) Build(builder clause.Builder) {
-//	var table = j.Table.TableName()
-//	var expr = clause.Expr{
-//		SQL: j.JoinType,
-//	}
-//	if v, ok := j.Table.(ICompactFrom); ok {
-//		expr.SQL += " (?) AS `" + v.TableName()
-//		expr.Vars = []any{v.Expr()}
-//	} else {
-//		expr.SQL += " `" + table
-//	}
-//	expr.SQL += "` ON ?"
-//	expr.Vars = append(expr.Vars, j.On)
-//	expr.Build(builder)
-//}

@@ -8,23 +8,7 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-type ExprTo struct {
-	clause.Expression
-}
-
-func (e ExprTo) AsF(name ...string) field.IField {
-	return FieldExpr(e.Expression, optional(name, ""))
-}
-
-func (e ExprTo) ToExpr() field.Expression {
-	return e.Expression
-}
-
 var Star field.IField = field.NewBase("", "*")
-
-type primitive interface {
-	~int | ~int8 | ~int16 | ~int32 | ~int64 | ~uint | ~uint8 | ~uint16 | ~uint32 | ~uint64 | ~float32 | ~float64 | ~string
-}
 
 func Primitive[T primitive](value T) field.ExpressionTo {
 	return ExprTo{Expr("?", value)}
@@ -871,7 +855,7 @@ func GROUP_CONCAT(expr field.Expression, separator ...string) field.ExpressionTo
 // SELECT IF(stock > 0, 'In Stock', 'Out of Stock') FROM products;
 // SELECT name, IF(age >= 18, '成年', '未成年') FROM users;
 // SELECT SUM(IF(status = 'completed', amount, 0)) FROM orders;
-func IF(condition field.Expression, valueIfTrue, valueIfFalse field.Expression) field.ExpressionTo {
+func IF(condition, valueIfTrue, valueIfFalse field.Expression) field.ExpressionTo {
 	return ExprTo{clause.Expr{
 		SQL:  "IF(?, ?, ?)",
 		Vars: []any{condition, valueIfTrue, valueIfFalse},

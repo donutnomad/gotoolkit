@@ -109,14 +109,6 @@ func DefineTable[Model any, ModelT any](tableName string, types ModelT, builder 
 	}
 }
 
-func And(exprs ...field.Expression) field.Expression {
-	return clause.And(exprs...)
-}
-
-func Or(exprs ...field.Expression) field.Expression {
-	return clause.Or(exprs...)
-}
-
 var (
 	createClauses = []string{"INSERT", "VALUES", "ON CONFLICT"}
 	queryClauses  = []string{"SELECT", "FROM", "WHERE", "GROUP BY", "ORDER BY", "LIMIT", "FOR"}
