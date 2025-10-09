@@ -21,6 +21,7 @@ type JoinClause struct {
 	JoinType string
 	Table    ITableName
 	On       field.Expression
+	hasOn    bool
 }
 
 type joiner struct {
@@ -33,6 +34,14 @@ func (j joiner) On(expr field.Expression) JoinClause {
 		JoinType: j.joinType,
 		Table:    j.table,
 		On:       expr,
+		hasOn:    true,
+	}
+}
+
+func (j joiner) OnEmpty() JoinClause {
+	return JoinClause{
+		JoinType: j.joinType,
+		Table:    j.table,
 	}
 }
 
@@ -67,6 +76,8 @@ func (j JoinClause) Build(builder clause.Builder) {
 	}
 
 	writer.WriteQuoted(tableName)
-	writer.WriteString(" ON ")
-	writer.AddVar(writer, j.On)
+	if j.hasOn {
+		writer.WriteString(" ON ")
+		writer.AddVar(writer, j.On)
+	}
 }
