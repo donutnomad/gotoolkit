@@ -67,7 +67,7 @@ func generateModelCode(model *gormparse.GormModelInfo) string {
 	for _, field := range model.Fields {
 		fieldType := mapFieldType(field.Type)
 		if fieldType == "" {
-			continue // 跳过JSON字段
+			continue
 		}
 		builder.WriteString(fmt.Sprintf("\t%s %s\n", field.Name, fieldType))
 	}
@@ -95,7 +95,7 @@ func generateModelCode(model *gormparse.GormModelInfo) string {
 	for _, field := range model.Fields {
 		fieldType := mapFieldType(field.Type)
 		if fieldType == "" {
-			continue // 跳过JSON字段
+			continue
 		}
 		builder.WriteString(fmt.Sprintf("\tt.%s = t.%s.WithTable(&tn)\n", field.Name, field.Name))
 	}
@@ -126,7 +126,7 @@ func generateModelCode(model *gormparse.GormModelInfo) string {
 	for _, field := range model.Fields {
 		fieldType := mapFieldType(field.Type)
 		if fieldType == "" {
-			continue // 跳过JSON字段
+			continue
 		}
 		builder.WriteString(fmt.Sprintf("\tt.%s,\n", field.Name))
 	}
@@ -142,7 +142,7 @@ func generateModelCode(model *gormparse.GormModelInfo) string {
 	for _, field := range model.Fields {
 		fieldType := mapFieldType(field.Type)
 		if fieldType == "" {
-			continue // 跳过JSON字段
+			continue
 		}
 		constructor := getFieldConstructor(fieldType)
 		flags := getFieldFlags(field.Tag)
@@ -161,13 +161,13 @@ func generateModelCode(model *gormparse.GormModelInfo) string {
 
 // mapFieldType 映射字段类型到field类型
 func mapFieldType(goType string) string {
-	// JSON类型忽略
-	if isJSONType(goType) {
-		return "" // 返回空字符串表示忽略
-	}
-
 	// 保留原始类型(包括包前缀)
 	originalType := goType
+
+	// JSON类型忽略
+	if isJSONType(goType) {
+		return fmt.Sprintf("field.Pattern[%s]", "string")
+	}
 
 	// 移除指针标记用于判断类型
 	typeForCheck := strings.TrimPrefix(goType, "*")
