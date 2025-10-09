@@ -59,6 +59,18 @@ func Test2(t *testing.T) {
 		expr:      Expr("SELECT aaa FROM Name"),
 	}).On(f1.EqF(f2)).Build(stmt)
 	fmt.Println(stmt.SQL.String())
+	stmt.SQL.Reset()
+
+	InnerJoin(JsonTable(
+		field.NewBase("alt", "exchange_rules"),
+		"$[*]",
+	).
+		AddColumn("symbol", "VARCHAR(255)", "$.token_symbol").
+		AddColumn("symbol2", "VARCHAR(255)", "$.token_symbol", "ERROR").
+		As("t"),
+	).On(f1.EqF(f2)).Build(stmt)
+	fmt.Println(stmt.SQL.String())
+	//Joins("JOIN JSON_TABLE(alt.exchange_rules, '$[*]' COLUMNS(symbol VARCHAR(255) PATH '$.token_symbol')) AS t").
 
 	//e := clause.Expr{
 	//	SQL:  "SELECT aaa ?",
@@ -74,7 +86,7 @@ type compactFromImpl struct {
 	expr      clause.Expression
 }
 
-func (c *compactFromImpl) Expr() clause.Expression {
+func (c *compactFromImpl) ToExpr() clause.Expression {
 	return c.expr
 }
 
