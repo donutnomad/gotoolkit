@@ -2,6 +2,7 @@ package field
 
 import (
 	"reflect"
+	"strings"
 
 	"gorm.io/gorm/clause"
 )
@@ -114,6 +115,8 @@ func WriteExpression(expr clause.Expression, builder clause.Builder) {
 	innerV, ok := expr.(clause.Expr)
 	if ok {
 		if innerV.SQL == "(?)" {
+			bracket = false
+		} else if strings.HasSuffix(innerV.SQL, ".*") {
 			bracket = false
 		} else if len(innerV.Vars) == 1 && innerV.SQL == "?" {
 			arg := innerV.Vars[0]

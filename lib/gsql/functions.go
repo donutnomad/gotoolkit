@@ -14,6 +14,20 @@ func Primitive[T primitive](value T) field.ExpressionTo {
 	return ExprTo{Expr("?", value)}
 }
 
+func StarWith(tableName string) field.IField {
+	return field.NewBaseFromSql(Expr("?.*", quoteClause{
+		name: tableName,
+	}), "")
+}
+
+type quoteClause struct {
+	name string
+}
+
+func (q quoteClause) Build(builder clause.Builder) {
+	builder.WriteQuoted(q.name)
+}
+
 // FALSE 返回布尔值假
 // SELECT FALSE;
 // SELECT FALSE = 0;

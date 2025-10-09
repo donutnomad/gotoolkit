@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 
 	"github.com/donutnomad/gotoolkit/internal/gormparse"
@@ -57,6 +58,22 @@ func generateModelCode(model *gormparse.GormModelInfo) string {
 	modelName := rawModelName
 	if strings.ToLower(modelName[len(modelName)-2:]) == "po" {
 		modelName = modelName[:len(modelName)-2]
+	}
+	// 处理字段名称冲突问题
+	for idx, f := range model.Fields {
+		if slices.Contains([]string{
+			"TableName",
+			"Alias",
+			"WithTable",
+			"As",
+			"ModelType",
+			"ModelTypeAny",
+			"AllFields",
+			"Star",
+		}, f.Name) {
+			f.Name += "T"
+		}
+		model.Fields[idx] = f
 	}
 
 	// 生成泛型表结构
@@ -131,6 +148,14 @@ func generateModelCode(model *gormparse.GormModelInfo) string {
 		builder.WriteString(fmt.Sprintf("\tt.%s,\n", field.Name))
 	}
 	builder.WriteString("\t}\n")
+	builder.WriteString("}\n\n")
+
+	// 生成Star()方法
+	builder.WriteString(fmt.Sprintf("func (t %s) Star() field.IField {\n", structName))
+	builder.WriteString("\tif t.alias != \"\" {\n")
+	builder.WriteString("\treturn gsql.StarWith(t.alias)\n")
+	builder.WriteString("\t}\n")
+	builder.WriteString("\treturn gsql.StarWith(t.tableName)\n")
 	builder.WriteString("}\n\n")
 
 	// 生成变量实例

@@ -73,8 +73,14 @@ func (j JoinClause) Build(builder clause.Builder) {
 		writer.AddVar(writer, v.ToExpr())
 		writer.WriteByte(')')
 		writer.WriteString(" AS ")
+	} else if v, ok := j.Table.(interface {
+		ITableName
+		Alias() string
+	}); ok {
+		writer.WriteQuoted(tableName)
+		writer.WriteString(" AS ")
+		tableName = v.Alias()
 	}
-
 	writer.WriteQuoted(tableName)
 	if j.hasOn {
 		writer.WriteString(" ON ")

@@ -16,10 +16,21 @@ func main() {
 	var dir = flag.String("dir", ".", "目录路径")
 	var structNames = flag.String("struct", "", "结构体名称,多个使用逗号分隔")
 	var prefix = flag.String("prefix", "", "生成的结构体前缀")
+	var outputDir = flag.String("out", "", "输出目录路径,支持$PROJECT_ROOT变量")
 	flag.Parse()
 
 	if *structNames == "" {
 		log.Fatal("请指定结构体名称,使用 -struct 参数")
+	}
+
+	// 解析输出目录
+	finalOutputDir := ""
+	if *outputDir != "" {
+		var err error
+		finalOutputDir, err = resolveOutputDir(*outputDir)
+		if err != nil {
+			log.Fatalf("解析输出目录失败: %v", err)
+		}
 	}
 
 	// 解析结构体名称列表
@@ -94,7 +105,14 @@ func main() {
 
 		// 使用第一个文件作为输出文件的基础
 		if outputFile == "" {
-			outputFile = strings.TrimSuffix(targetFile, ".go") + "_query.go"
+			if finalOutputDir != "" {
+				// 使用指定的输出目录
+				fileName := strings.TrimSuffix(filepath.Base(targetFile), ".go") + "_query.go"
+				outputFile = filepath.Join(finalOutputDir, fileName)
+			} else {
+				// 使用原文件所在目录
+				outputFile = strings.TrimSuffix(targetFile, ".go") + "_query.go"
+			}
 		}
 	}
 
@@ -132,4 +150,52 @@ func containsStruct(filename, structName string) bool {
 
 	// 简单的字符串匹配,检查是否包含 "type StructName struct"
 	return strings.Contains(string(content), fmt.Sprintf("type %s struct", structName))
+}
+
+// resolveOutputDir 解析输出目录，支持$PROJECT_ROOT变量
+func resolveOutputDir(outputDir string) (string, error) {
+	if !strings.Contains(outputDir, "$PROJECT_ROOT") {
+		// 没有变量，直接返回
+		return outputDir, nil
+	}
+
+	// 查找项目根目录
+	projectRoot, err := findProjectRoot(".")
+	if err != nil {
+		return "", fmt.Errorf("查找项目根目录失败: %v", err)
+	}
+
+	// 替换$PROJECT_ROOT变量
+	resolvedDir := strings.ReplaceAll(outputDir, "$PROJECT_ROOT", projectRoot)
+
+	// 确保目录存在
+	if err := os.MkdirAll(resolvedDir, 0755); err != nil {
+		return "", fmt.Errorf("创建输出目录失败: %v", err)
+	}
+
+	return resolvedDir, nil
+}
+
+// findProjectRoot 向上递归查找包含go.mod的目录
+func findProjectRoot(startDir string) (string, error) {
+	currentDir, err := filepath.Abs(startDir)
+	if err != nil {
+		return "", err
+	}
+
+	for {
+		goModPath := filepath.Join(currentDir, "go.mod")
+		if _, err := os.Stat(goModPath); err == nil {
+			return currentDir, nil
+		}
+
+		parentDir := filepath.Dir(currentDir)
+		if parentDir == currentDir {
+			// 已经到达根目录
+			break
+		}
+		currentDir = parentDir
+	}
+
+	return "", fmt.Errorf("未找到包含go.mod的目录")
 }
