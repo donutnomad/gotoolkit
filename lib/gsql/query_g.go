@@ -226,7 +226,9 @@ func (b *QueryBuilderG[T]) Last(db IDB) (*T, error) {
 
 func (b *QueryBuilderG[T]) Find(db IDB) ([]*T, error) {
 	var dest []*T
-	ret := b.build(db).Find(&dest)
+	tx := b.build(db)
+	//ret := tx.Find(&dest)
+	ret := Scan(tx, dest)
 	if ret.RowsAffected == 0 {
 		return nil, nil
 	} else if ret.Error != nil {
@@ -278,7 +280,9 @@ func firstLast[T any](b *QueryBuilderG[T], db IDB, order, desc bool, dest any) e
 		})
 	}
 
-	if err := tx.Find(dest).Error; err != nil {
+	ret := Scan(tx, dest)
+	//if err := tx.Find(dest).Error; err != nil {
+	if err := ret.Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			err = nil
 		}

@@ -52,7 +52,9 @@ type IDB interface {
 
 	//Pluck(column string, dest any) *gorm.DB
 	//Unscoped() *gorm.DB
-	Scan(dest any) *gorm.DB
+	//Scan(dest any) *gorm.DB
+
+	Session(config *gorm.Session) *gorm.DB
 	//Exec(sql string, values ...any) *gorm.DB
 	//Take(dest any, conds ...any) *gorm.DB
 }
@@ -153,6 +155,10 @@ func (d *DefaultGormDB) Model(value any) (tx *gorm.DB) {
 
 func (d *DefaultGormDB) Scan(dest any) (tx *gorm.DB) {
 	return d.getDB().Scan(dest)
+}
+
+func (d *DefaultGormDB) Session(config *gorm.Session) *gorm.DB {
+	return d.getDB().Session(config)
 }
 
 func (d *DefaultGormDB) Create(value any) (tx *gorm.DB) {
