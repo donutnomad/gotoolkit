@@ -39,7 +39,7 @@ type QueryBuilderG[T any] struct {
 }
 
 func SelectG[T any](fields ...field.IField) *baseQueryBuilderG[T] {
-	return baseQueryBuilderG[T]{}.Select(fields...)
+	return (&baseQueryBuilderG[T]{}).Select(fields...)
 }
 
 func PluckG[T any, Field interface {
@@ -53,7 +53,7 @@ func FromG[T any, Table interface {
 	TableName() string
 	ModelType() *T
 }](from Table) *QueryBuilderG[T] {
-	return baseQueryBuilderG[T]{}.Select().From(from)
+	return (&baseQueryBuilderG[T]{}).Select().From(from)
 }
 
 type baseQueryBuilderG[T any] struct {
@@ -61,7 +61,7 @@ type baseQueryBuilderG[T any] struct {
 	cte     *CTEClause
 }
 
-func (b baseQueryBuilderG[T]) Select(fields ...field.IField) *baseQueryBuilderG[T] {
+func (b *baseQueryBuilderG[T]) Select(fields ...field.IField) *baseQueryBuilderG[T] {
 	for _, f := range fields {
 		if v, ok := f.(field.BaseFields); ok {
 			b.selects = append(b.selects, v...)
@@ -69,10 +69,10 @@ func (b baseQueryBuilderG[T]) Select(fields ...field.IField) *baseQueryBuilderG[
 			b.selects = append(b.selects, f)
 		}
 	}
-	return &b
+	return b
 }
 
-func (b baseQueryBuilderG[T]) From(table interface {
+func (b *baseQueryBuilderG[T]) From(table interface {
 	TableName() string
 }) *QueryBuilderG[T] {
 	qb := &QueryBuilderG[T]{

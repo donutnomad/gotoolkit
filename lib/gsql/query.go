@@ -10,7 +10,7 @@ import (
 type QueryBuilder QueryBuilderG[any]
 
 func Select(fields ...field.IField) *baseQueryBuilder {
-	return baseQueryBuilder{}.Select(fields...)
+	return (&baseQueryBuilder{}).Select(fields...)
 }
 
 func Pluck(f field.IField) *baseQueryBuilder {
@@ -22,8 +22,8 @@ type baseQueryBuilder struct {
 	cte     *CTEClause
 }
 
-func (baseQueryBuilder) Select(fields ...field.IField) *baseQueryBuilder {
-	var b = &baseQueryBuilder{}
+func (b *baseQueryBuilder) Select(fields ...field.IField) *baseQueryBuilder {
+	//var b = baseQueryBuilder{}
 	for _, f := range fields {
 		if v, ok := f.(field.BaseFields); ok {
 			b.selects = append(b.selects, v...)
@@ -34,7 +34,7 @@ func (baseQueryBuilder) Select(fields ...field.IField) *baseQueryBuilder {
 	return b
 }
 
-func (b baseQueryBuilder) From(table interface{ TableName() string }) *QueryBuilder {
+func (b *baseQueryBuilder) From(table interface{ TableName() string }) *QueryBuilder {
 	return &QueryBuilder{
 		selects: b.selects,
 		from:    table,

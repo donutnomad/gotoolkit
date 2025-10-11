@@ -80,7 +80,7 @@ func NewColumnClause(f Base) ColumnClause {
 			Table: f.tableName,
 			Name:  f.columnName,
 			Alias: f.alias,
-			Raw:   false,
+			Raw:   f.columnName == "*",
 		},
 	}
 }
