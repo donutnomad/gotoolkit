@@ -382,7 +382,13 @@ func (b *QueryBuilderG[T]) AsF(asName ...string) field.IField {
 func (b *QueryBuilderG[T]) firstLast(db IDB, order, desc bool) (*T, error) {
 	var dest T
 	err := firstLast(b, db, order, desc, &dest)
-	return &dest, err
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &dest, nil
 }
 
 func (b *QueryBuilderG[T]) ToExpr() clause.Expr {
@@ -586,12 +592,10 @@ func firstLast[T any](b *QueryBuilderG[T], db IDB, order, desc bool, dest any) e
 		})
 	}
 
+	stmt.RaiseErrorOnNotFound = true
 	ret := Scan(tx, dest)
 	//if err := tx.Find(dest).Error; err != nil {
 	if err := ret.Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			err = nil
-		}
 		return err
 	}
 	return nil

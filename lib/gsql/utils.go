@@ -160,7 +160,11 @@ func Scan(db IDB, dest any) *gorm.DB {
 			_ = ScanRows(tx, rows, dest)
 		} else {
 			tx.RowsAffected = 0
-			_ = tx.AddError(rows.Err())
+			dbErr := rows.Err()
+			if dbErr == nil {
+				dbErr = gorm.ErrRecordNotFound
+			}
+			_ = tx.AddError(dbErr)
 		}
 		_ = tx.AddError(rows.Close())
 	}
