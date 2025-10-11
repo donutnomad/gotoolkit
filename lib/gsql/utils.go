@@ -45,6 +45,21 @@ func sourceDir(file string) string {
 	return filepath.ToSlash(s) + "/"
 }
 
+func optional[T any](args []T, def T) T {
+	if len(args) == 0 {
+		return def
+	}
+	return args[0]
+}
+
+func getQuoteFunc() func(field string) string {
+	return func(field string) string {
+		var writer strings.Builder
+		dialector.QuoteTo(&writer, field)
+		return writer.String()
+	}
+}
+
 type wrapperLogger struct {
 	logger.Interface
 	logger.Writer

@@ -34,6 +34,8 @@ type QueryBuilderG[T any] struct {
 	// table hints on FROM
 	fromIndexHints []indexHint
 	fromPartitions []string
+	// CTE (Common Table Expressions)
+	cte *CTEClause
 }
 
 func SelectG[T any](fields ...field.IField) *baseQueryBuilderG[T] {
@@ -56,10 +58,10 @@ func FromG[T any, Table interface {
 
 type baseQueryBuilderG[T any] struct {
 	selects []field.IField
+	cte     *CTEClause
 }
 
-func (baseQueryBuilderG[T]) Select(fields ...field.IField) *baseQueryBuilderG[T] {
-	var b = &baseQueryBuilderG[T]{}
+func (b baseQueryBuilderG[T]) Select(fields ...field.IField) *baseQueryBuilderG[T] {
 	for _, f := range fields {
 		if v, ok := f.(field.BaseFields); ok {
 			b.selects = append(b.selects, v...)
@@ -67,16 +69,18 @@ func (baseQueryBuilderG[T]) Select(fields ...field.IField) *baseQueryBuilderG[T]
 			b.selects = append(b.selects, f)
 		}
 	}
-	return b
+	return &b
 }
 
 func (b baseQueryBuilderG[T]) From(table interface {
 	TableName() string
 }) *QueryBuilderG[T] {
-	return &QueryBuilderG[T]{
+	qb := &QueryBuilderG[T]{
 		selects: b.selects,
 		from:    table,
+		cte:     b.cte,
 	}
+	return qb
 }
 
 func (b *QueryBuilderG[T]) Join(clauses ...JoinClause) *QueryBuilderG[T] {
@@ -98,27 +102,14 @@ func (b *QueryBuilderG[T]) String() string {
 	return b.ToSQL()
 }
 
-func (b *QueryBuilderG[T]) ToExpr() clause.Expr {
-	tx := &gorm.DB{
-		Config: &gorm.Config{
-			ClauseBuilders: map[string]clause.ClauseBuilder{},
-			Dialector:      dialector,
-		},
-		Statement: &gorm.Statement{
-			Clauses:      map[string]clause.Clause{},
-			BuildClauses: queryClauses,
-		},
-	}
-	if b.unscoped {
-		tx = tx.Unscoped()
-	}
-	tx.Statement.DB = tx
-	b.buildStmt(tx.Statement, getQuoteFunc())
-	callbacks.BuildQuerySQL(tx)
-	return clause.Expr{SQL: tx.Statement.SQL.String(), Vars: tx.Statement.Vars}
-}
-
 func (b *QueryBuilderG[T]) Clone() *QueryBuilderG[T] {
+	var cte *CTEClause
+	if b.cte != nil {
+		cte = &CTEClause{
+			CTEs:      slices.Clone(b.cte.CTEs),
+			Recursive: b.cte.Recursive,
+		}
+	}
 	return &QueryBuilderG[T]{
 		selects:        slices.Clone(b.selects),
 		from:           b.from,
@@ -133,6 +124,7 @@ func (b *QueryBuilderG[T]) Clone() *QueryBuilderG[T] {
 		locking:        b.locking,
 		fromIndexHints: slices.Clone(b.fromIndexHints),
 		fromPartitions: slices.Clone(b.fromPartitions),
+		cte:            cte,
 	}
 }
 
@@ -393,64 +385,50 @@ func (b *QueryBuilderG[T]) firstLast(db IDB, order, desc bool) (*T, error) {
 	return &dest, err
 }
 
-func firstLast[T any](b *QueryBuilderG[T], db IDB, order, desc bool, dest any) error {
-	tx := b.Clone().Limit(1).build(db)
-	stmt := tx.GetStatement()
-	stmt.RaiseErrorOnNotFound = true
-
-	if lo.IsNil(stmt.Model) {
-		if v, ok := b.from.(interface{ ModelTypeAny() any }); ok {
-			stmt.Model = v.ModelTypeAny()
-		}
-	}
-
-	if order && !lo.IsNil(stmt.Model) {
-		stmt.AddClause(clause.OrderBy{
-			Columns: []clause.OrderByColumn{
-				{
-					Column: clause.Column{Table: clause.CurrentTable, Name: clause.PrimaryKey},
-					Desc:   desc,
+func (b *QueryBuilderG[T]) ToExpr() clause.Expr {
+	tx := &gorm.DB{
+		Config: &gorm.Config{
+			ClauseBuilders: map[string]clause.ClauseBuilder{
+				"CTE": func(c clause.Clause, builder clause.Builder) {
+					if cte, ok := c.Expression.(CTEClause); ok {
+						cte.Build(builder)
+					}
 				},
 			},
-		})
+			Dialector: dialector,
+		},
+		Statement: &gorm.Statement{
+			Clauses:      map[string]clause.Clause{},
+			BuildClauses: queryClauses,
+		},
 	}
-
-	ret := Scan(tx, dest)
-	//if err := tx.Find(dest).Error; err != nil {
-	if err := ret.Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			err = nil
-		}
-		return err
-	}
-	return nil
-}
-
-func optional[T any](args []T, def T) T {
-	if len(args) == 0 {
-		return def
-	}
-	return args[0]
-}
-
-func getQuoteFunc() func(field string) string {
-	return func(field string) string {
-		var writer strings.Builder
-		dialector.QuoteTo(&writer, field)
-		return writer.String()
-	}
+	tx.Statement.DB = tx
+	b.buildStmt(tx.Statement, getQuoteFunc())
+	callbacks.BuildQuerySQL(tx)
+	return clause.Expr{SQL: tx.Statement.SQL.String(), Vars: tx.Statement.Vars}
 }
 
 func (b *QueryBuilderG[T]) build(db IDB) IDB {
-	tx := db.Table("")
-	if b.unscoped {
-		tx = tx.Unscoped()
+	tx := db.Session(&gorm.Session{
+		Initialized: true,
+	})
+	tx.Config.ClauseBuilders["CTE"] = func(c clause.Clause, builder clause.Builder) {
+		if cte, ok := c.Expression.(CTEClause); ok {
+			cte.Build(builder)
+		}
 	}
 	b.buildStmt(tx.Statement, getQuoteFunc())
 	return NewDefaultGormDB(tx)
 }
 
 func (b *QueryBuilderG[T]) buildStmt(stmt *gorm.Statement, quote func(field string) string) {
+	if b.unscoped {
+		stmt.Unscoped = true
+	}
+	// 添加 CTE 子句
+	if b.cte != nil {
+		stmt.AddClause(*b.cte)
+	}
 	stmt.Distinct = b.distinct
 	if v, ok := b.from.(ICompactFrom); ok {
 		stmt.TableExpr = &clause.Expr{SQL: "(?) AS " + v.TableName(), Vars: []any{v.ToExpr()}}
@@ -584,4 +562,37 @@ func buildPartitionSQL(quote func(string) string, parts []string) string {
 	}
 	b.WriteString(")")
 	return b.String()
+}
+
+func firstLast[T any](b *QueryBuilderG[T], db IDB, order, desc bool, dest any) error {
+	tx := b.Clone().Limit(1).build(db)
+	stmt := tx.GetStatement()
+	stmt.RaiseErrorOnNotFound = true
+
+	if lo.IsNil(stmt.Model) {
+		if v, ok := b.from.(interface{ ModelTypeAny() any }); ok {
+			stmt.Model = v.ModelTypeAny()
+		}
+	}
+
+	if order && !lo.IsNil(stmt.Model) {
+		stmt.AddClause(clause.OrderBy{
+			Columns: []clause.OrderByColumn{
+				{
+					Column: clause.Column{Table: clause.CurrentTable, Name: clause.PrimaryKey},
+					Desc:   desc,
+				},
+			},
+		})
+	}
+
+	ret := Scan(tx, dest)
+	//if err := tx.Find(dest).Error; err != nil {
+	if err := ret.Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			err = nil
+		}
+		return err
+	}
+	return nil
 }

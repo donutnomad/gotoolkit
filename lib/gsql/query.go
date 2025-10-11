@@ -19,6 +19,7 @@ func Pluck(f field.IField) *baseQueryBuilder {
 
 type baseQueryBuilder struct {
 	selects []field.IField
+	cte     *CTEClause
 }
 
 func (baseQueryBuilder) Select(fields ...field.IField) *baseQueryBuilder {
@@ -37,6 +38,7 @@ func (b baseQueryBuilder) From(table interface{ TableName() string }) *QueryBuil
 	return &QueryBuilder{
 		selects: b.selects,
 		from:    table,
+		cte:     b.cte,
 	}
 }
 
