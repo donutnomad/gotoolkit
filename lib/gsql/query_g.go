@@ -355,7 +355,7 @@ func (b *QueryBuilderG[T]) Find(db IDB) ([]*T, error) {
 	var dest []*T
 	tx := b.build(db)
 	//ret := tx.Find(&dest)
-	ret := Scan(tx, dest)
+	ret := Scan(tx, &dest)
 	if ret.RowsAffected == 0 {
 		return nil, nil
 	} else if ret.Error != nil {
