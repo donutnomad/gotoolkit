@@ -43,3 +43,15 @@ func ListMap[Model any, OUT any](db gsql.IDB, query *gsql.QueryBuilderG[Model], 
 	}
 	return mapper(pos), total, nil
 }
+
+func ListAndMap[Model any, OUT any](db gsql.IDB, query *gsql.QueryBuilderG[Model], mapper func([]*Model) []*OUT, scopes ...gsql.ScopeFuncG[Model]) ([]*OUT, int64, error) {
+	total, err := query.Count(db)
+	if err != nil {
+		return nil, 0, err
+	}
+	pos, err := query.Scopes(scopes...).Find(db)
+	if err != nil {
+		return nil, 0, err
+	}
+	return mapper(pos), total, nil
+}
