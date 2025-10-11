@@ -75,8 +75,7 @@ func (f patternImpl[T]) anyToString(value any) string {
 	for {
 		switch v := value.(type) {
 		case string:
-			valueString = v
-			break
+			return v
 		case driver.Valuer:
 			v1, err := v.Value()
 			if err != nil {
@@ -98,9 +97,6 @@ func (f patternImpl[T]) anyToString(value any) string {
 }
 
 func (f patternImpl[T]) operateValue(value any, operator string, escape byte, valueFormatter func(value string) string) Expression {
-	if f.IsExpr() {
-		panic("[patternImpl] cannot operate on expr")
-	}
 	var expr clause.Expression = clause.Like{
 		Column: f.ToColumn(),
 		Value: escapeClause{

@@ -5,12 +5,10 @@ import (
 	"fmt"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/donutnomad/gotoolkit/lib/gsql/field"
-	mysql2 "github.com/go-sql-driver/mysql"
+	"github.com/donutnomad/gotoolkit/lib/gsql/internal/utils"
 	"github.com/samber/lo"
-	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 	"gorm.io/gorm/callbacks"
 	"gorm.io/gorm/clause"
@@ -28,6 +26,14 @@ type QueryBuilderG[T any] struct {
 	limit    int
 	unscoped bool
 	distinct bool
+	// group by / having
+	groupBy []field.IField
+	having  []clause.Expression
+	// locking (FOR UPDATE/SHARE ... NOWAIT/SKIP LOCKED)
+	locking *clause.Locking
+	// table hints on FROM
+	fromIndexHints []indexHint
+	fromPartitions []string
 }
 
 func SelectG[T any](fields ...field.IField) *baseQueryBuilderG[T] {
@@ -79,9 +85,7 @@ func (b *QueryBuilderG[T]) Join(clauses ...JoinClause) *QueryBuilderG[T] {
 }
 
 func (b *QueryBuilderG[T]) Where(exprs ...field.Expression) *QueryBuilderG[T] {
-	for _, expr := range exprs {
-		b.wheres = append(b.wheres, expr)
-	}
+	b.wheres = append(b.wheres, exprs...)
 	return b
 }
 
@@ -109,21 +113,26 @@ func (b *QueryBuilderG[T]) ToExpr() clause.Expr {
 		tx = tx.Unscoped()
 	}
 	tx.Statement.DB = tx
-	b.buildStmt(tx.Statement, quote())
+	b.buildStmt(tx.Statement, getQuoteFunc())
 	callbacks.BuildQuerySQL(tx)
 	return clause.Expr{SQL: tx.Statement.SQL.String(), Vars: tx.Statement.Vars}
 }
 
 func (b *QueryBuilderG[T]) Clone() *QueryBuilderG[T] {
 	return &QueryBuilderG[T]{
-		selects:  slices.Clone(b.selects),
-		from:     b.from,
-		joins:    slices.Clone(b.joins),
-		wheres:   slices.Clone(b.wheres),
-		orders:   slices.Clone(b.orders),
-		offset:   b.offset,
-		limit:    b.limit,
-		unscoped: b.unscoped,
+		selects:        slices.Clone(b.selects),
+		from:           b.from,
+		joins:          slices.Clone(b.joins),
+		wheres:         slices.Clone(b.wheres),
+		orders:         slices.Clone(b.orders),
+		offset:         b.offset,
+		limit:          b.limit,
+		unscoped:       b.unscoped,
+		groupBy:        slices.Clone(b.groupBy),
+		having:         slices.Clone(b.having),
+		locking:        b.locking,
+		fromIndexHints: slices.Clone(b.fromIndexHints),
+		fromPartitions: slices.Clone(b.fromPartitions),
 	}
 }
 
@@ -147,6 +156,132 @@ func (b *QueryBuilderG[T]) Offset(offset int) *QueryBuilderG[T] {
 
 func (b *QueryBuilderG[T]) Limit(limit int) *QueryBuilderG[T] {
 	b.limit = limit
+	return b
+}
+
+// GroupBy adds GROUP BY columns
+func (b *QueryBuilderG[T]) GroupBy(cols ...field.IField) *QueryBuilderG[T] {
+	b.groupBy = append(b.groupBy, cols...)
+	return b
+}
+
+// Having adds HAVING expressions
+func (b *QueryBuilderG[T]) Having(exprs ...field.Expression) *QueryBuilderG[T] {
+	b.having = append(b.having, exprs...)
+	return b
+}
+
+// ForUpdate sets locking to FOR UPDATE
+func (b *QueryBuilderG[T]) ForUpdate() *QueryBuilderG[T] {
+	if b.locking == nil {
+		b.locking = &clause.Locking{}
+	}
+	b.locking.Strength = clause.LockingStrengthUpdate
+	return b
+}
+
+// ForShare sets locking to FOR SHARE
+func (b *QueryBuilderG[T]) ForShare() *QueryBuilderG[T] {
+	if b.locking == nil {
+		b.locking = &clause.Locking{}
+	}
+	b.locking.Strength = clause.LockingStrengthShare
+	return b
+}
+
+// Nowait adds NOWAIT option to locking
+func (b *QueryBuilderG[T]) Nowait() *QueryBuilderG[T] {
+	if b.locking == nil {
+		b.locking = &clause.Locking{}
+	}
+	b.locking.Options = clause.LockingOptionsNoWait
+	return b
+}
+
+// SkipLocked adds SKIP LOCKED option to locking
+func (b *QueryBuilderG[T]) SkipLocked() *QueryBuilderG[T] {
+	if b.locking == nil {
+		b.locking = &clause.Locking{}
+	}
+	b.locking.Options = clause.LockingOptionsSkipLocked
+	return b
+}
+
+// Partition sets PARTITION list for FROM table
+func (b *QueryBuilderG[T]) Partition(parts ...string) *QueryBuilderG[T] {
+	b.fromPartitions = append(b.fromPartitions, parts...)
+	return b
+}
+
+// UseIndex appends USE INDEX (idx, ...) hint
+func (b *QueryBuilderG[T]) UseIndex(indexes ...string) *QueryBuilderG[T] {
+	b.fromIndexHints = append(b.fromIndexHints, indexHint{action: "USE", indexNames: indexes})
+	return b
+}
+
+// IgnoreIndex appends IGNORE INDEX (idx, ...) hint
+func (b *QueryBuilderG[T]) IgnoreIndex(indexes ...string) *QueryBuilderG[T] {
+	b.fromIndexHints = append(b.fromIndexHints, indexHint{action: "IGNORE", indexNames: indexes})
+	return b
+}
+
+// ForceIndex appends FORCE INDEX (idx, ...) hint
+func (b *QueryBuilderG[T]) ForceIndex(indexes ...string) *QueryBuilderG[T] {
+	b.fromIndexHints = append(b.fromIndexHints, indexHint{action: "FORCE", indexNames: indexes})
+	return b
+}
+
+// UseIndexForJoin appends USE INDEX FOR JOIN (idx, ...) hint
+func (b *QueryBuilderG[T]) UseIndexForJoin(indexes ...string) *QueryBuilderG[T] {
+	b.fromIndexHints = append(b.fromIndexHints, indexHint{action: "USE", forTarget: "JOIN", indexNames: indexes})
+	return b
+}
+
+// IgnoreIndexForJoin appends IGNORE INDEX FOR JOIN (idx, ...) hint
+func (b *QueryBuilderG[T]) IgnoreIndexForJoin(indexes ...string) *QueryBuilderG[T] {
+	b.fromIndexHints = append(b.fromIndexHints, indexHint{action: "IGNORE", forTarget: "JOIN", indexNames: indexes})
+	return b
+}
+
+// ForceIndexForJoin appends FORCE INDEX FOR JOIN (idx, ...) hint
+func (b *QueryBuilderG[T]) ForceIndexForJoin(indexes ...string) *QueryBuilderG[T] {
+	b.fromIndexHints = append(b.fromIndexHints, indexHint{action: "FORCE", forTarget: "JOIN", indexNames: indexes})
+	return b
+}
+
+// UseIndexForOrderBy appends USE INDEX FOR ORDER BY (idx, ...) hint
+func (b *QueryBuilderG[T]) UseIndexForOrderBy(indexes ...string) *QueryBuilderG[T] {
+	b.fromIndexHints = append(b.fromIndexHints, indexHint{action: "USE", forTarget: "ORDER BY", indexNames: indexes})
+	return b
+}
+
+// IgnoreIndexForOrderBy appends IGNORE INDEX FOR ORDER BY (idx, ...) hint
+func (b *QueryBuilderG[T]) IgnoreIndexForOrderBy(indexes ...string) *QueryBuilderG[T] {
+	b.fromIndexHints = append(b.fromIndexHints, indexHint{action: "IGNORE", forTarget: "ORDER BY", indexNames: indexes})
+	return b
+}
+
+// ForceIndexForOrderBy appends FORCE INDEX FOR ORDER BY (idx, ...) hint
+func (b *QueryBuilderG[T]) ForceIndexForOrderBy(indexes ...string) *QueryBuilderG[T] {
+	b.fromIndexHints = append(b.fromIndexHints, indexHint{action: "FORCE", forTarget: "ORDER BY", indexNames: indexes})
+	return b
+}
+
+// UseIndexForGroupBy appends USE INDEX FOR GROUP BY (idx, ...) hint
+func (b *QueryBuilderG[T]) UseIndexForGroupBy(indexes ...string) *QueryBuilderG[T] {
+	b.fromIndexHints = append(b.fromIndexHints, indexHint{action: "USE", forTarget: "GROUP BY", indexNames: indexes})
+	return b
+}
+
+// IgnoreIndexForGroupBy appends IGNORE INDEX FOR GROUP BY (idx, ...) hint
+func (b *QueryBuilderG[T]) IgnoreIndexForGroupBy(indexes ...string) *QueryBuilderG[T] {
+	b.fromIndexHints = append(b.fromIndexHints, indexHint{action: "IGNORE", forTarget: "GROUP BY", indexNames: indexes})
+	return b
+}
+
+// ForceIndexForGroupBy appends FORCE INDEX FOR GROUP BY (idx, ...) hint
+func (b *QueryBuilderG[T]) ForceIndexForGroupBy(indexes ...string) *QueryBuilderG[T] {
+	b.fromIndexHints = append(b.fromIndexHints, indexHint{action: "FORCE", forTarget: "GROUP BY", indexNames: indexes})
 	return b
 }
 
@@ -298,7 +433,7 @@ func optional[T any](args []T, def T) T {
 	return args[0]
 }
 
-func quote() func(field string) string {
+func getQuoteFunc() func(field string) string {
 	return func(field string) string {
 		var writer strings.Builder
 		dialector.QuoteTo(&writer, field)
@@ -311,7 +446,7 @@ func (b *QueryBuilderG[T]) build(db IDB) IDB {
 	if b.unscoped {
 		tx = tx.Unscoped()
 	}
-	b.buildStmt(tx.Statement, quote())
+	b.buildStmt(tx.Statement, getQuoteFunc())
 	return NewDefaultGormDB(tx)
 }
 
@@ -329,15 +464,22 @@ func (b *QueryBuilderG[T]) buildStmt(stmt *gorm.Statement, quote func(field stri
 			}
 		}
 		stmt.TableExpr, stmt.Table = txTable(quote, tn)
+		// decorate table expr with partition / index hints if present
+		if stmt.TableExpr != nil {
+			expr := stmt.TableExpr
+			suffix := strings.TrimSpace(strings.Join([]string{
+				buildPartitionSQL(quote, b.fromPartitions),
+				buildIndexHintsSQL(quote, b.fromIndexHints),
+			}, " "))
+			if len(suffix) > 0 {
+				expr.SQL = expr.SQL + " " + suffix
+			}
+		}
 	}
 	addSelects(stmt, b.selects)
 	if len(b.wheres) > 0 {
 		stmt.AddClause(clause.Where{Exprs: b.wheres})
 	}
-	//for _, where := range b.wheres {
-	//	if conds := stmt.BuildCondition(where.Query, where.Args...); len(conds) > 0 {
-	//	}
-	//}
 	for _, join := range b.joins {
 		_from := stmt.Clauses["FROM"]
 		fromClause := clause.From{}
@@ -371,48 +513,75 @@ func (b *QueryBuilderG[T]) buildStmt(stmt *gorm.Statement, quote func(field stri
 	if len(orderBy.Columns) > 0 {
 		stmt.AddClause(orderBy)
 	}
+	// GROUP BY / HAVING
+	if len(b.groupBy) > 0 || len(b.having) > 0 {
+		var cols []clause.Column
+		if len(b.groupBy) > 0 {
+			cols = make([]clause.Column, 0, len(b.groupBy))
+			for _, gb := range b.groupBy {
+				cols = append(cols, clause.Column{Name: gb.FullName(), Raw: true})
+			}
+		}
+		stmt.AddClause(clause.GroupBy{Columns: cols, Having: b.having})
+	}
+	// FOR locking
+	if b.locking != nil {
+		stmt.AddClause(*b.locking)
+	}
 }
 
 ////////////////////////////////////////////////
 
-var dialector = mysql.Dialector{
-	Config: &mysql.Config{
-		DSNConfig: &mysql2.Config{
-			Loc: time.UTC,
-		},
-	},
+var dialector = utils.Dialector
+
+// ---------- table hints helpers ----------
+type indexHint struct {
+	action     string // USE | IGNORE | FORCE
+	forTarget  string // "" | JOIN | ORDER BY | GROUP BY
+	indexNames []string
 }
 
-//func (b *QueryBuilderG[T]) ToFieldG(asName string) field.Pattern[T] {
-//	e := b.ToExpr()
-//	base := field.NewBaseFromSql(clause.Expr{
-//		SQL:  e.SQL,
-//		Vars: e.Vars,
-//	}, asName, b.from.TableName())
-//	return field.NewPatternWith[T](*base)
-//}
+func buildIndexHintsSQL(quote func(string) string, hints []indexHint) string {
+	if len(hints) == 0 {
+		return ""
+	}
+	var parts []string
+	for _, h := range hints {
+		if len(h.indexNames) == 0 || h.action == "" {
+			continue
+		}
+		var b strings.Builder
+		b.WriteString(h.action)
+		b.WriteString(" INDEX")
+		if h.forTarget != "" {
+			b.WriteString(" FOR ")
+			b.WriteString(h.forTarget)
+		}
+		b.WriteString(" (")
+		for i, idx := range h.indexNames {
+			if i > 0 {
+				b.WriteByte(',')
+			}
+			b.WriteString(quote(idx))
+		}
+		b.WriteString(")")
+		parts = append(parts, b.String())
+	}
+	return strings.Join(parts, " ")
+}
 
-//// Scan 执行查询
-//func (b *QueryBuilderG[T]) Scan(db IDB) (*T, error) {
-//	var def T
-//	ret := b.build(db).Scan(&def)
-//	if ret.RowsAffected == 0 {
-//		return nil, nil
-//	} else if ret.Error != nil {
-//		return nil, ret.Error
-//	}
-//	return &def, nil
-//}
-
-//func (b *QueryBuilderG[T]) Pluck(db IDB, column interface {
-//	field.IField
-//	field.IFieldType[T]
-//}) ([]T, error) {
-//	var name = field.ExtractColumn(column)
-//	builder := b.Clone()
-//	builder.selects = nil
-//
-//	var dest []T
-//	err := builder.build(db).Pluck(name, &dest).Error
-//	return dest, err
-//}
+func buildPartitionSQL(quote func(string) string, parts []string) string {
+	if len(parts) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("PARTITION (")
+	for i, p := range parts {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		b.WriteString(quote(p))
+	}
+	b.WriteString(")")
+	return b.String()
+}

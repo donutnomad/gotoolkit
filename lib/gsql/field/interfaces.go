@@ -148,6 +148,15 @@ func NewComparableWith[T any](b Base) Comparable[T] {
 	}
 }
 
+func NewComparableWithField[T any](field IField) Comparable[T] {
+	b := *NewBaseFromSql(field.ToExpr(), "")
+	return Comparable[T]{
+		Base:           b,
+		comparableImpl: comparableImpl[T]{IField: b},
+		pointerImpl:    pointerImpl{IField: b},
+	}
+}
+
 func (f Comparable[T]) FieldType() T {
 	var def T
 	return def

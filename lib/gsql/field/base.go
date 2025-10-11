@@ -1,6 +1,7 @@
 package field
 
 import (
+	"github.com/donutnomad/gotoolkit/lib/gsql/internal/utils"
 	"gorm.io/gorm/clause"
 )
 
@@ -70,6 +71,17 @@ func (f Base) IsExpr() bool {
 // ToColumn 转换为clause.Column对象，只有非expr模式才支持导出
 func (f Base) ToColumn() clause.Column {
 	if f.sql != nil {
+		var s = utils.NewMemoryBuilder()
+		f.sql.Build(s)
+		var sql = s.SQL.String()
+		if len(s.Vars) == 0 && isLiteralFunctionName(sql) {
+			return clause.Column{
+				Table: "",
+				Name:  sql,
+				Alias: "",
+				Raw:   true,
+			}
+		}
 		panic("expr field cannot to column")
 	}
 	return NewColumnClause(f).Column

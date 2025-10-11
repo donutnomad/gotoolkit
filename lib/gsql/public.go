@@ -144,11 +144,15 @@ func addSelects(stmt *gorm.Statement, selects []field.IField) {
 	}
 	var m = make(map[string]struct{}, len(selects))
 	for _, s := range selects {
-		_, ok := m[s.Name()]
-		if ok {
-			panic(fmt.Sprintf("conflict select field name: `%s`, check your select fields", s.Name()))
+		name := s.Name()
+		if len(name) == 0 {
+			continue
 		}
-		m[s.Name()] = struct{}{}
+		_, ok := m[name]
+		if ok {
+			panic(fmt.Sprintf("conflict select field name: `%s`, check your select fields", name))
+		}
+		m[name] = struct{}{}
 	}
 
 	stmt.AddClause(clause.Select{

@@ -14,6 +14,41 @@ func Primitive[T primitive](value T) field.ExpressionTo {
 	return ExprTo{Expr("?", value)}
 }
 
+func Mul(expr1, expr2 field.Expression) field.ExpressionTo {
+	return ExprTo{clause.Expr{
+		SQL:  "? * ?",
+		Vars: []any{expr1, expr2},
+	}}
+}
+
+func Div(expr1, expr2 field.Expression) field.ExpressionTo {
+	return ExprTo{clause.Expr{
+		SQL:  "? / ?",
+		Vars: []any{expr1, expr2},
+	}}
+}
+
+func Add(expr1, expr2 field.Expression) field.ExpressionTo {
+	return ExprTo{clause.Expr{
+		SQL:  "? + ?",
+		Vars: []any{expr1, expr2},
+	}}
+}
+
+func Sub(expr1, expr2 field.Expression) field.ExpressionTo {
+	return ExprTo{clause.Expr{
+		SQL:  "? - ?",
+		Vars: []any{expr1, expr2},
+	}}
+}
+
+func Mod(expr1, expr2 field.Expression) field.ExpressionTo {
+	return ExprTo{clause.Expr{
+		SQL:  "? % ?",
+		Vars: []any{expr1, expr2},
+	}}
+}
+
 func StarWith(tableName string) field.IField {
 	return field.NewBaseFromSql(Expr("?.*", quoteClause{
 		name: tableName,

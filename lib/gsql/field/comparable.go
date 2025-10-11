@@ -3,6 +3,7 @@ package field
 import (
 	"fmt"
 
+	"github.com/donutnomad/gotoolkit/lib/gsql/internal/utils"
 	"github.com/samber/lo"
 	"github.com/samber/mo"
 	"gorm.io/gorm/clause"
@@ -25,7 +26,7 @@ func (f comparableImpl[T]) EqOpt(value mo.Option[T]) Expression {
 }
 
 func (f comparableImpl[T]) EqF(other IField) Expression {
-	return f.operateField2(other, "=")
+	return f.operateField(other, "=")
 }
 
 func (f comparableImpl[T]) Not(value T) Expression {
@@ -40,7 +41,7 @@ func (f comparableImpl[T]) NotOpt(value mo.Option[T]) Expression {
 }
 
 func (f comparableImpl[T]) NotF(other IField) Expression {
-	return f.operateField2(other, "!=")
+	return f.operateField(other, "!=")
 }
 
 func (f comparableImpl[T]) In(values ...T) Expression {
@@ -69,7 +70,7 @@ func (f comparableImpl[T]) GtOpt(value mo.Option[T]) Expression {
 }
 
 func (f comparableImpl[T]) GtF(other IField) Expression {
-	return f.operateField2(other, ">")
+	return f.operateField(other, ">")
 }
 
 func (f comparableImpl[T]) Gte(value T) Expression {
@@ -84,7 +85,7 @@ func (f comparableImpl[T]) GteOpt(value mo.Option[T]) Expression {
 }
 
 func (f comparableImpl[T]) GteF(other IField) Expression {
-	return f.operateField2(other, ">=")
+	return f.operateField(other, ">=")
 }
 
 func (f comparableImpl[T]) Lt(value T) Expression {
@@ -99,7 +100,7 @@ func (f comparableImpl[T]) LtOpt(value mo.Option[T]) Expression {
 }
 
 func (f comparableImpl[T]) LtF(other IField) Expression {
-	return f.operateField2(other, "<")
+	return f.operateField(other, "<")
 }
 
 func (f comparableImpl[T]) Lte(value T) Expression {
@@ -114,7 +115,7 @@ func (f comparableImpl[T]) LteOpt(value mo.Option[T]) Expression {
 }
 
 func (f comparableImpl[T]) LteF(other IField) Expression {
-	return f.operateField2(other, "<=")
+	return f.operateField(other, "<=")
 }
 
 func (f comparableImpl[T]) operateValue(value any, operator string) Expression {
@@ -122,10 +123,6 @@ func (f comparableImpl[T]) operateValue(value any, operator string) Expression {
 }
 
 func (f comparableImpl[T]) operateValue2(column any, value any, operator string) Expression {
-	if f.IsExpr() {
-		panic("[comparableImpl] cannot operate on expr")
-	}
-
 	var expr clause.Expression
 	switch operator {
 	case "=":
@@ -141,22 +138,15 @@ func (f comparableImpl[T]) operateValue2(column any, value any, operator string)
 	case "<=":
 		expr = clause.Lte{Column: column, Value: value}
 	case "IN":
-		expr = clause.IN{Column: column, Values: []any{value}}
+		expr = utils.IN{Column: column, Values: []any{value}}
 	case "NOT IN":
-		expr = clause.Not(clause.IN{Column: column, Values: []any{value}})
+		expr = clause.Not(utils.IN{Column: column, Values: []any{value}})
 	default:
 		panic(fmt.Sprintf("invalid operator %s", operator))
 	}
 	return expr
 }
 
-func (f comparableImpl[T]) operateField(other IComparable[T], operator string) Expression {
-	if other.IsExpr() {
-		panic("[comparableImpl] cannot operate on expr")
-	}
-	return f.operateValue(other.ToColumn(), operator)
-}
-
-func (f comparableImpl[T]) operateField2(other IField, operator string) Expression {
+func (f comparableImpl[T]) operateField(other IField, operator string) Expression {
 	return f.operateValue2(f.ToColumn(), other.ToExpr(), operator)
 }

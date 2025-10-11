@@ -123,10 +123,8 @@ func WriteExpression(expr clause.Expression, builder clause.Builder) {
 			if isNumber(arg) || isString(arg) {
 				bracket = false
 			}
-		} else {
-			if isLiteralFunctionName(innerV.SQL) {
-				bracket = false
-			}
+		} else if isLiteralFunctionName(innerV.SQL) {
+			bracket = false
 		}
 	}
 	if bracket {
