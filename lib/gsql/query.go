@@ -4,6 +4,7 @@ import (
 	"slices"
 
 	"github.com/donutnomad/gotoolkit/lib/gsql/field"
+	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
@@ -77,7 +78,7 @@ func (b *QueryBuilder) Clone() *QueryBuilder {
 	}
 }
 
-func (b *QueryBuilder) build(db IDB) IDB {
+func (b *QueryBuilder) build(db IDB) *gorm.DB {
 	return b.as().build(db)
 }
 

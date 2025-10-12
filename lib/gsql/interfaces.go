@@ -41,22 +41,7 @@ type ITableName interface {
 
 type IDB interface {
 	Model(value any) (tx *gorm.DB)
-	Table(name string, args ...any) *gorm.DB
-	GetStatement() *gorm.Statement
-
-	Create(value any) *gorm.DB
-	Delete(value any, conds ...any) *gorm.DB
-	Updates(values any) *gorm.DB
-	Find(dest any, conds ...any) *gorm.DB
-	Count(count *int64) *gorm.DB
-
-	//Pluck(column string, dest any) *gorm.DB
-	//Unscoped() *gorm.DB
-	//Scan(dest any) *gorm.DB
-
 	Session(config *gorm.Session) *gorm.DB
-	//Exec(sql string, values ...any) *gorm.DB
-	//Take(dest any, conds ...any) *gorm.DB
 }
 
 type DefaultGormDB struct {

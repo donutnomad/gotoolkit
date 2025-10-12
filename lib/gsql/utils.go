@@ -146,7 +146,9 @@ func fileWithLineNum() string {
 	return ""
 }
 
-func Scan(db IDB, dest any) *gorm.DB {
+func Scan(db interface {
+	Session(config *gorm.Session) *gorm.DB
+}, dest any) *gorm.DB {
 	tx := db.Session(&gorm.Session{
 		Initialized: true,
 	})

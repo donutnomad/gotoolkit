@@ -414,7 +414,7 @@ func (b *QueryBuilderG[T]) ToExpr() clause.Expr {
 	return clause.Expr{SQL: tx.Statement.SQL.String(), Vars: tx.Statement.Vars}
 }
 
-func (b *QueryBuilderG[T]) build(db IDB) IDB {
+func (b *QueryBuilderG[T]) build(db IDB) *gorm.DB {
 	tx := db.Session(&gorm.Session{
 		Initialized: true,
 	})
@@ -424,7 +424,7 @@ func (b *QueryBuilderG[T]) build(db IDB) IDB {
 		}
 	}
 	b.buildStmt(tx.Statement, getQuoteFunc())
-	return NewDefaultGormDB(tx)
+	return tx
 }
 
 func (b *QueryBuilderG[T]) buildStmt(stmt *gorm.Statement, quote func(field string) string) {
@@ -572,7 +572,7 @@ func buildPartitionSQL(quote func(string) string, parts []string) string {
 
 func firstLast[T any](b *QueryBuilderG[T], db IDB, order, desc bool, dest any) error {
 	tx := b.Clone().Limit(1).build(db)
-	stmt := tx.GetStatement()
+	stmt := tx.Statement
 	stmt.RaiseErrorOnNotFound = true
 
 	if lo.IsNil(stmt.Model) {
