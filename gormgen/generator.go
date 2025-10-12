@@ -238,7 +238,7 @@ func getFieldConstructor(fieldType string) string {
 	if strings.Contains(fieldType, "Pattern") {
 		// 提取泛型参数
 		start := strings.Index(fieldType, "[")
-		end := strings.Index(fieldType, "]")
+		end := strings.LastIndex(fieldType, "]")
 		if start != -1 && end != -1 {
 			typeParam := fieldType[start+1 : end]
 			return fmt.Sprintf("field.NewPattern[%s]", typeParam)
@@ -248,7 +248,7 @@ func getFieldConstructor(fieldType string) string {
 	if strings.Contains(fieldType, "Comparable") {
 		// 提取泛型参数
 		start := strings.Index(fieldType, "[")
-		end := strings.Index(fieldType, "]")
+		end := strings.LastIndex(fieldType, "]")
 		if start != -1 && end != -1 {
 			typeParam := fieldType[start+1 : end]
 			return fmt.Sprintf("field.NewComparable[%s]", typeParam)
