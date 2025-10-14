@@ -89,7 +89,14 @@ func (b *QueryBuilderG[T]) Join(clauses ...JoinClause) *QueryBuilderG[T] {
 }
 
 func (b *QueryBuilderG[T]) Where(exprs ...field.Expression) *QueryBuilderG[T] {
-	b.wheres = append(b.wheres, exprs...)
+	for _, expr := range exprs {
+		if v, ok := expr.(clause.Expr); ok {
+			if len(v.SQL) == 0 {
+				continue
+			}
+		}
+		b.wheres = append(b.wheres, expr)
+	}
 	return b
 }
 

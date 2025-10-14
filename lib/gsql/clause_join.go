@@ -69,17 +69,28 @@ func (j JoinClause) Build(builder clause.Builder) {
 
 	var tableName = j.Table.TableName()
 	if v, ok := j.Table.(ICompactFrom); ok {
-		writer.WriteByte('(')
+		var bracket = true
+		if v2, ok := v.(interface{ NeedBrackets() bool }); ok {
+			bracket = v2.NeedBrackets()
+		}
+		if bracket {
+			writer.WriteByte('(')
+		}
 		writer.AddVar(writer, v.ToExpr())
-		writer.WriteByte(')')
+		if bracket {
+			writer.WriteByte(')')
+		}
 		writer.WriteString(" AS ")
 	} else if v, ok := j.Table.(interface {
 		ITableName
 		Alias() string
 	}); ok {
-		writer.WriteQuoted(tableName)
-		writer.WriteString(" AS ")
-		tableName = v.Alias()
+		alias := v.Alias()
+		if alias != "" {
+			writer.WriteQuoted(tableName)
+			writer.WriteString(" AS ")
+			tableName = v.Alias()
+		}
 	}
 	writer.WriteQuoted(tableName)
 	if j.hasOn {

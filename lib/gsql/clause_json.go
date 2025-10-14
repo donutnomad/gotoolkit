@@ -99,6 +99,10 @@ func (e jsonTableClause) TableName() string {
 	return e.tableName
 }
 
+func (e jsonTableClause) NeedBrackets() bool {
+	return false
+}
+
 // Build
 // Joins("JOIN JSON_TABLE(alt.exchange_rules, '$[*]' COLUMNS(symbol VARCHAR(255) PATH '$.token_symbol')) AS t").
 func (e jsonTableClause) Build(builder clause.Builder) {
@@ -114,5 +118,6 @@ func (e jsonTableClause) Build(builder clause.Builder) {
 		}
 		c.Build(builder)
 	}
+	builder.WriteString(")")
 	builder.WriteString(")")
 }
