@@ -157,6 +157,8 @@ func Scan(db interface {
 	config.Logger = newLogger
 	tx.Config = &config
 
+	_ = tx.Statement.Parse(dest)
+
 	if rows, err := tx.Rows(); err == nil {
 		if rows.Next() {
 			_ = ScanRows(tx, rows, dest)
