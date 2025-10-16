@@ -582,7 +582,7 @@ func firstLast[T any](b *QueryBuilderG[T], db IDB, order, desc bool, dest any) e
 	stmt := tx.Statement
 	stmt.RaiseErrorOnNotFound = true
 
-	if lo.IsNil(stmt.Model) {
+	if !lo.IsNil(stmt.Model) {
 		if v, ok := b.from.(interface{ ModelTypeAny() any }); ok {
 			stmt.Model = v.ModelTypeAny()
 		}
