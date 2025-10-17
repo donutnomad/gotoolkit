@@ -17,6 +17,11 @@ func InnerJoin(table ITableName) joiner {
 	return joiner{joinType: "INNER JOIN", table: table}
 }
 
+// Join JOIN是INNER JOIN的别名
+func Join(table ITableName) joiner {
+	return joiner{joinType: "JOIN", table: table}
+}
+
 type JoinClause struct {
 	JoinType string
 	Table    ITableName
@@ -50,6 +55,7 @@ func (j JoinClause) And(expr field.Expression) JoinClause {
 		JoinType: j.JoinType,
 		Table:    j.Table,
 		On:       And(j.On, expr),
+		hasOn:    true,
 	}
 }
 
@@ -58,6 +64,7 @@ func (j JoinClause) Or(expr field.Expression) JoinClause {
 		JoinType: j.JoinType,
 		Table:    j.Table,
 		On:       Or(j.On, expr),
+		hasOn:    true,
 	}
 }
 
