@@ -180,6 +180,19 @@ func (f Comparable[T]) WithAlias(alias string) Comparable[T] {
 	return NewComparableWith[T](b)
 }
 
+func (f Comparable[T]) FromUnixTime() Comparable[T] {
+	expr := clause.Expr{
+		SQL:  "FROM_UNIXTIME(?)",
+		Vars: []any{f},
+	}
+	b := NewBaseFromSql(expr, "")
+	return Comparable[T]{
+		Base:           *b,
+		comparableImpl: comparableImpl[T]{IField: b},
+		pointerImpl:    pointerImpl{IField: b},
+	}
+}
+
 // TODO: 缺少一个BETWEEN操作符
 // TODO: 增加一个Blob类型(支持比较 + LIKE(字符串操作))
 // TODO: 增加一个JSON类型（=,!=,LIKE操作符)
