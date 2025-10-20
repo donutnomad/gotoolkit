@@ -146,12 +146,16 @@ func fileWithLineNum() string {
 	return ""
 }
 
-func Scan(db interface {
-	Session(config *gorm.Session) *gorm.DB
-}, dest any) *gorm.DB {
-	tx := db.Session(&gorm.Session{
+func Scan(
+	logLevel int,
+	db *gorm.DB, dest any) *gorm.DB {
+	session := &gorm.Session{
 		Initialized: true,
-	})
+	}
+	if logLevel > 0 {
+		session.Logger = db.Logger.LogMode(logger.LogLevel(logLevel))
+	}
+	tx := db.Session(session)
 	config := *tx.Config
 	currentLogger, newLogger := config.Logger, logger.Recorder.New()
 	config.Logger = newLogger
@@ -173,7 +177,7 @@ func Scan(db interface {
 		_ = tx.AddError(rows.Close())
 	}
 
-	NewWrapperLogger(currentLogger, logLevel).Trace(tx.Statement.Context, newLogger.BeginAt, func() (string, int64) {
+	currentLogger.Trace(tx.Statement.Context, newLogger.BeginAt, func() (string, int64) {
 		return newLogger.SQL, tx.RowsAffected
 	}, tx.Error)
 	tx.Logger = currentLogger

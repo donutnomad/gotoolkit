@@ -12,6 +12,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/callbacks"
 	"gorm.io/gorm/clause"
+	"gorm.io/gorm/logger"
 )
 
 type ScopeFuncG[Model any] func(b *QueryBuilderG[Model])
@@ -35,7 +36,8 @@ type QueryBuilderG[T any] struct {
 	fromIndexHints []indexHint
 	fromPartitions []string
 	// CTE (Common Table Expressions)
-	cte *CTEClause
+	cte      *CTEClause
+	logLevel int
 }
 
 func SelectG[T any](fields ...field.IField) *baseQueryBuilderG[T] {
@@ -362,7 +364,7 @@ func (b *QueryBuilderG[T]) Find(db IDB) ([]*T, error) {
 	var dest []*T
 	tx := b.build(db)
 	//ret := tx.Find(&dest)
-	ret := Scan(tx, &dest)
+	ret := Scan(b.logLevel, tx, &dest)
 	if ret.RowsAffected == 0 {
 		return nil, nil
 	} else if ret.Error != nil {
@@ -419,6 +421,11 @@ func (b *QueryBuilderG[T]) ToExpr() clause.Expr {
 	b.buildStmt(tx.Statement, getQuoteFunc())
 	callbacks.BuildQuerySQL(tx)
 	return clause.Expr{SQL: tx.Statement.SQL.String(), Vars: tx.Statement.Vars}
+}
+
+func (b *QueryBuilderG[T]) Debug() *QueryBuilderG[T] {
+	b.logLevel = int(logger.Info)
+	return b
 }
 
 func (b *QueryBuilderG[T]) build(db IDB) *gorm.DB {
@@ -600,7 +607,7 @@ func firstLast[T any](b *QueryBuilderG[T], db IDB, order, desc bool, dest any) e
 	}
 
 	stmt.RaiseErrorOnNotFound = true
-	ret := Scan(tx, dest)
+	ret := Scan(b.logLevel, tx, dest)
 	//if err := tx.Find(dest).Error; err != nil {
 	if err := ret.Error; err != nil {
 		return err

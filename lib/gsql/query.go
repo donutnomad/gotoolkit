@@ -6,6 +6,7 @@ import (
 	"github.com/donutnomad/gotoolkit/lib/gsql/field"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"gorm.io/gorm/logger"
 )
 
 type QueryBuilder QueryBuilderG[any]
@@ -282,9 +283,14 @@ func (b *QueryBuilder) Last(db IDB, dest any) error {
 	return firstLast(b.as(), db, true, true, dest)
 }
 
+func (b *QueryBuilder) Debug() *QueryBuilder {
+	b.logLevel = int(logger.Info)
+	return b
+}
+
 func (b *QueryBuilder) Find(db IDB, dest any) error {
 	tx := b.build(db)
-	ret := Scan(tx, dest)
+	ret := Scan(b.logLevel, tx, dest)
 	//ret := b.build(db).Find(dest)
 	if ret.RowsAffected == 0 {
 		return nil
