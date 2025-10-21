@@ -118,6 +118,57 @@ func (f comparableImpl[T]) LteF(other IField) Expression {
 	return f.operateField(other, "<=")
 }
 
+// Between
+// opFrom: >=,>,=,<=,<, default: >=
+// opTo: >=,>,=,<=,<, default: <
+func (f comparableImpl[T]) Between(from, to *T, op ...string) Expression {
+	return f.BetweenOpt(Range[T]{
+		From: mo.PointerToOption(from),
+		To:   mo.PointerToOption(to),
+	}, op...)
+}
+
+// BetweenOpt
+// opFrom: >=,>,=,<=,<, default: >=
+// opTo: >=,>,=,<=,<, default: <
+func (f comparableImpl[T]) BetweenOpt(rng interface {
+	FromValue() *T
+	ToValue() *T
+}, op ...string) Expression {
+	var opFrom = ">="
+	var opTo = "<"
+	if len(op) > 0 {
+		opFrom = op[0]
+	}
+	if len(op) > 1 {
+		opTo = op[1]
+	}
+	var opFunc = func(op string, val *T) clause.Expression {
+		if val == nil {
+			return nil
+		}
+		value := mo.Some(*val)
+		switch op {
+		case ">=":
+			return f.GteOpt(value)
+		case ">":
+			return f.GtOpt(value)
+		case "=":
+			return f.EqOpt(value)
+		case "<=":
+			return f.LteOpt(value)
+		case "<":
+			return f.LtOpt(value)
+		default:
+			panic(fmt.Sprintf("invalid operation %q", op))
+		}
+	}
+	exprs := []clause.Expression{opFunc(opFrom, rng.FromValue()), opFunc(opTo, rng.ToValue())}
+	return clause.And(lo.Filter(exprs, func(item clause.Expression, index int) bool {
+		return item != nil
+	})...)
+}
+
 func (f comparableImpl[T]) operateValue(value any, operator string) Expression {
 	return f.operateValue2(f.ToColumn(), value, operator)
 }

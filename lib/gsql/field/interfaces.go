@@ -5,6 +5,19 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+type Range[T any] struct {
+	From mo.Option[T]
+	To   mo.Option[T]
+}
+
+func (r Range[T]) FromValue() *T {
+	return r.From.ToPointer()
+}
+
+func (r Range[T]) ToValue() *T {
+	return r.To.ToPointer()
+}
+
 type Expression = clause.Expression
 
 type ExpressionTo interface {

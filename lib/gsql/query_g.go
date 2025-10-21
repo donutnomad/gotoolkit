@@ -16,6 +16,12 @@ import (
 )
 
 type ScopeFuncG[Model any] func(b *QueryBuilderG[Model])
+type Builder = QueryBuilderG[any]
+type ScopeFunc func(builder *Builder)
+type FieldOrder struct {
+	Field field.IField
+	Asc   bool
+}
 
 type QueryBuilderG[T any] struct {
 	selects  []field.IField
@@ -92,6 +98,9 @@ func (b *QueryBuilderG[T]) Join(clauses ...JoinClause) *QueryBuilderG[T] {
 
 func (b *QueryBuilderG[T]) Where(exprs ...field.Expression) *QueryBuilderG[T] {
 	for _, expr := range exprs {
+		if lo.IsNil(expr) {
+			continue
+		}
 		if v, ok := expr.(clause.Expr); ok {
 			if len(v.SQL) == 0 {
 				continue
@@ -139,6 +148,13 @@ func (b *QueryBuilderG[T]) Clone() *QueryBuilderG[T] {
 
 func (b *QueryBuilderG[T]) Order(column field.IField, asc ...bool) *QueryBuilderG[T] {
 	b.orders = append(b.orders, order{column, optional(asc, true)})
+	return b
+}
+
+func (b *QueryBuilderG[T]) OrderBy(fields ...FieldOrder) *QueryBuilderG[T] {
+	for _, item := range fields {
+		b.orders = append(b.orders, order{item.Field, item.Asc})
+	}
 	return b
 }
 
@@ -286,11 +302,16 @@ func (b *QueryBuilderG[T]) ForceIndexForGroupBy(indexes ...string) *QueryBuilder
 	return b
 }
 
-func (b *QueryBuilderG[T]) Scope(fn ScopeFuncG[T]) *QueryBuilderG[T] {
-	return b.Scopes(fn)
+func (b *QueryBuilderG[T]) Scope(fns ...ScopeFunc) *QueryBuilderG[T] {
+	clone := asAny[any](b)
+	for _, fn := range fns {
+		fn(clone)
+	}
+	toG(b, clone)
+	return b
 }
 
-func (b *QueryBuilderG[T]) Scopes(fns ...ScopeFuncG[T]) *QueryBuilderG[T] {
+func (b *QueryBuilderG[T]) ScopeG(fns ...ScopeFuncG[T]) *QueryBuilderG[T] {
 	for _, fn := range fns {
 		fn(b)
 	}
@@ -526,6 +547,46 @@ func (b *QueryBuilderG[T]) buildStmt(stmt *gorm.Statement, quote func(field stri
 	if b.locking != nil {
 		stmt.AddClause(*b.locking)
 	}
+}
+
+func asAny[OUT any, IN any](in *QueryBuilderG[IN]) *QueryBuilderG[OUT] {
+	return &QueryBuilderG[OUT]{
+		selects:        in.selects,
+		from:           in.from,
+		joins:          in.joins,
+		wheres:         in.wheres,
+		orders:         in.orders,
+		offset:         in.offset,
+		limit:          in.limit,
+		unscoped:       in.unscoped,
+		distinct:       in.distinct,
+		groupBy:        in.groupBy,
+		having:         in.having,
+		locking:        in.locking,
+		fromIndexHints: in.fromIndexHints,
+		fromPartitions: in.fromPartitions,
+		cte:            in.cte,
+		logLevel:       in.logLevel,
+	}
+}
+
+func toG[T any, T2 any](dst *QueryBuilderG[T], src *QueryBuilderG[T2]) {
+	dst.selects = src.selects
+	dst.from = src.from
+	dst.joins = src.joins
+	dst.wheres = src.wheres
+	dst.orders = src.orders
+	dst.offset = src.offset
+	dst.limit = src.limit
+	dst.unscoped = src.unscoped
+	dst.distinct = src.distinct
+	dst.groupBy = src.groupBy
+	dst.having = src.having
+	dst.locking = src.locking
+	dst.fromIndexHints = src.fromIndexHints
+	dst.fromPartitions = src.fromPartitions
+	dst.cte = src.cte
+	dst.logLevel = src.logLevel
 }
 
 ////////////////////////////////////////////////

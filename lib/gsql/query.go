@@ -209,15 +209,9 @@ func (b *QueryBuilder) Limit(limit int) *QueryBuilder {
 	return b
 }
 
-type ScopeFunc func(b *QueryBuilder)
-
-func (b *QueryBuilder) Scope(fn ScopeFunc) *QueryBuilder {
-	return b.Scopes(fn)
-}
-
-func (b *QueryBuilder) Scopes(fns ...ScopeFunc) *QueryBuilder {
+func (b *QueryBuilder) Scope(fns ...ScopeFunc) *QueryBuilder {
 	for _, fn := range fns {
-		fn(b)
+		fn((*QueryBuilderG[any])(b))
 	}
 	return b
 }
