@@ -67,7 +67,7 @@ func main() {
 			log.Fatalf("在目录 %s 中未找到包含结构体 %s 的文件", *dir, structName)
 		}
 
-		fmt.Printf("找到结构体 %s 在文件: %s\n", structName, targetFile)
+		fmt.Printf("[setterGen] 找到结构体 %s 在文件: %s\n", structName, targetFile)
 
 		// 解析结构体
 		structInfo, err := structparse.ParseStruct(targetFile, structName)
@@ -122,7 +122,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("生成查询文件失败: %v", err)
 		}
-		fmt.Printf("成功生成查询文件: %s (包含 %d 个结构体)\n", outputFile, len(allModels))
+		fmt.Printf("[setterGen] 成功生成查询文件: %s (包含 %d 个结构体)\n", outputFile, len(allModels))
 	}
 }
 

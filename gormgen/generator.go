@@ -2,12 +2,11 @@ package main
 
 import (
 	"fmt"
-	"os"
-	"os/exec"
 	"slices"
 	"strings"
 
 	"github.com/donutnomad/gotoolkit/internal/gormparse"
+	"github.com/donutnomad/gotoolkit/internal/utils"
 )
 
 // generateGormQueryFileForMultiple 生成多个模型的GORM查询文件
@@ -36,18 +35,7 @@ func generateGormQueryFileForMultiple(filename string, models []*gormparse.GormM
 		builder.WriteString(generateModelCode(model))
 	}
 
-	// 写入文件
-	if err := os.WriteFile(filename, []byte(builder.String()), 0644); err != nil {
-		return err
-	}
-
-	// 运行goimports格式化
-	cmd := exec.Command("goimports", "-w", filename)
-	if err := cmd.Run(); err != nil {
-		fmt.Printf("警告: goimports失败,请手动添加必要的import: %v\n", err)
-	}
-
-	return nil
+	return utils.WriteFormat(filename, []byte(builder.String()))
 }
 
 // generateModelCode 生成单个模型的代码

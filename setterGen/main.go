@@ -19,7 +19,7 @@ func main() {
 	flag.Parse()
 
 	if *structNames == "" {
-		log.Fatal("请指定结构体名称，使用 -struct 参数")
+		log.Fatal("[setterGen] 请指定结构体名称，使用 -struct 参数")
 	}
 
 	// 解析结构体名称列表
@@ -56,15 +56,15 @@ func main() {
 		}
 
 		if targetFile == "" {
-			log.Fatalf("在目录 %s 中未找到包含结构体 %s 的文件", *dir, structName)
+			log.Fatalf("[setterGen] 在目录 %s 中未找到包含结构体 %s 的文件", *dir, structName)
 		}
 
-		fmt.Printf("找到结构体 %s 在文件: %s\n", structName, targetFile)
+		fmt.Printf("[setterGen] 找到结构体 %s 在文件: %s\n", structName, targetFile)
 
 		// 解析结构体
 		structInfo, err := parseStruct(targetFile, structName)
 		if err != nil {
-			log.Fatalf("解析结构体 %s 失败: %v", structName, err)
+			log.Fatalf("[setterGen] 解析结构体 %s 失败: %v", structName, err)
 		}
 
 		if *debug {
@@ -102,7 +102,7 @@ func main() {
 			if err != nil {
 				log.Fatalf("生成GORM patch文件失败: %v", err)
 			}
-			fmt.Printf("成功生成GORM patch文件: %s (包含 %d 个结构体)\n", outputFile, len(gormModels))
+			fmt.Printf("[setterGen] 成功生成GORM patch文件: %s (包含 %d 个结构体)\n", outputFile, len(gormModels))
 		} else if *fields {
 			// 字段常量生成模式
 			outputFile := strings.TrimSuffix(targetFile, ".go") + "_fields.go"
@@ -114,7 +114,7 @@ func main() {
 			if err != nil {
 				log.Fatalf("生成字段常量文件失败: %v", err)
 			}
-			fmt.Printf("成功生成字段常量文件: %s (包含 %d 个结构体)\n", outputFile, len(gormModels))
+			fmt.Printf("[setterGen] 成功生成字段常量文件: %s (包含 %d 个结构体)\n", outputFile, len(gormModels))
 		} else {
 			// 原有的setter生成模式
 			outputFile := strings.TrimSuffix(targetFile, ".go") + "_setter.go"
@@ -126,7 +126,7 @@ func main() {
 			if err != nil {
 				log.Fatalf("生成setter文件失败: %v", err)
 			}
-			fmt.Printf("成功生成setter文件: %s (包含 %d 个结构体)\n", outputFile, len(structInfos))
+			fmt.Printf("[setterGen] Success: %s (包含 %d 个结构体)\n", outputFile, len(structInfos))
 		}
 	}
 }

@@ -61,6 +61,7 @@ type GenerationConfig struct {
 	EnableMiddleware  bool              // 是否启用中间件支持
 	CustomTemplates   map[string]string // 自定义模板
 	SkipTypeReference bool              // 是否跳过类型引用生成
+	EnableFormat      bool              // 是否启用代码格式化
 
 	// 内部状态
 	ProcessedFiles []string // 已处理的文件列表
@@ -75,7 +76,8 @@ func NewDefaultConfig() *GenerationConfig {
 		Verbose:           false,
 		EnableMiddleware:  true,
 		CustomTemplates:   make(map[string]string),
-		SkipTypeReference: true, // 默认跳过类型引用生成，避免生成 var _ 声明
+		SkipTypeReference: true,  // 默认跳过类型引用生成，避免生成 var _ 声明
+		EnableFormat:      false, // 默认不启用格式化
 		ProcessedFiles:    []string{},
 	}
 }

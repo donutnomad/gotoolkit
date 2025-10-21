@@ -2,9 +2,9 @@ package main
 
 import (
 	"fmt"
-	"os"
-	"os/exec"
 	"strings"
+
+	"github.com/donutnomad/gotoolkit/internal/utils"
 )
 
 // generateFieldsFileForMultiple 生成多个结构体的字段常量文件
@@ -30,20 +30,7 @@ func generateFieldsFileForMultiple(filename string, gormModels []*GormModelInfo)
 		sb.WriteString("\n")
 	}
 
-	// 写入文件
-	err := os.WriteFile(filename, []byte(sb.String()), 0644)
-	if err != nil {
-		return err
-	}
-
-	// 运行goimports格式化生成的文件
-	cmd := exec.Command("goimports", "-w", filename)
-	if err := cmd.Run(); err != nil {
-		// 如果goimports失败，不返回错误，只是跳过格式化
-		fmt.Printf("警告: 运行goimports失败: %v\n", err)
-	}
-
-	return nil
+	return utils.WriteFormat(filename, []byte(sb.String()))
 }
 
 // generateFieldsFile 生成字段常量文件
@@ -60,20 +47,7 @@ func generateFieldsFile(filename string, gormModel *GormModelInfo) error {
 	sb.WriteString(generateFieldsStruct(gormModel))
 	sb.WriteString("\n")
 
-	// 写入文件
-	err := os.WriteFile(filename, []byte(sb.String()), 0644)
-	if err != nil {
-		return err
-	}
-
-	// 运行goimports格式化生成的文件
-	cmd := exec.Command("goimports", "-w", filename)
-	if err := cmd.Run(); err != nil {
-		// 如果goimports失败，不返回错误，只是跳过格式化
-		fmt.Printf("警告: 运行goimports失败: %v\n", err)
-	}
-
-	return nil
+	return utils.WriteFormat(filename, []byte(sb.String()))
 }
 
 // generateFieldsStruct 生成字段常量结构体

@@ -6,10 +6,11 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"unicode"
+
+	"github.com/donutnomad/gotoolkit/internal/utils"
 )
 
 // generateSetterFileForMultiple 生成多个结构体的setter文件
@@ -98,25 +99,12 @@ func generateSetterFileForMultiple(filename string, structInfos []*StructInfo, e
 				}
 			}
 
-			fmt.Printf("结构体 %s: 生成setter方法: %d/%d (跳过了%d个未使用的方法)\n",
+			fmt.Printf("[setterGen] 结构体 %s: 生成setter方法: %d/%d (跳过了%d个未使用的方法)\n",
 				structInfo.Name, usedCount, totalFields, totalFields-usedCount)
 		}
 	}
 
-	// 写入文件
-	err := os.WriteFile(filename, []byte(sb.String()), 0644)
-	if err != nil {
-		return err
-	}
-
-	// 运行goimports格式化生成的文件
-	cmd := exec.Command("goimports", "-w", filename)
-	if err := cmd.Run(); err != nil {
-		// 如果goimports失败，不返回错误，只是跳过格式化
-		fmt.Printf("警告: 运行goimports失败: %v\n", err)
-	}
-
-	return nil
+	return utils.WriteFormat(filename, []byte(sb.String()))
 }
 
 // generateSetterFile 生成setter文件
@@ -170,17 +158,9 @@ func generateSetterFile(filename string, structInfo *StructInfo, enableClean boo
 	// 生成setter方法
 	sb.WriteString(generateSetterMethodsWithFields(structInfo, filteredFields))
 
-	// 写入文件
-	err := os.WriteFile(filename, []byte(sb.String()), 0644)
+	err := utils.WriteFormat(filename, []byte(sb.String()))
 	if err != nil {
-		return err
-	}
-
-	// 运行goimports格式化生成的文件
-	cmd := exec.Command("goimports", "-w", filename)
-	if err := cmd.Run(); err != nil {
-		// 如果goimports失败，不返回错误，只是跳过格式化
-		fmt.Printf("警告: 运行goimports失败: %v\n", err)
+		panic(err)
 	}
 
 	// 输出统计信息

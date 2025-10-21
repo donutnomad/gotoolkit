@@ -2,10 +2,11 @@ package utils
 
 import (
 	"fmt"
-	"golang.org/x/tools/go/packages"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"golang.org/x/tools/go/packages"
 )
 
 func NameWithoutPoint(name string) string {

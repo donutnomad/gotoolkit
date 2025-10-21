@@ -15,6 +15,7 @@ var (
 	verbose         = flag.Bool("v", false, "详细输出")
 	includeTypeRefs = flag.Bool("include-type-refs", false, "生成类型引用声明（var _ 声明）")
 	version         = flag.Int("version", 2, "兼容的版本号")
+	enableFormat    = flag.Bool("fmt", false, "启用代码格式化")
 )
 
 func main() {
@@ -41,6 +42,7 @@ func createConfigFromFlags() *GenerationConfig {
 	config.Package = *packageName
 	config.Verbose = *verbose
 	config.SkipTypeReference = !*includeTypeRefs // 如果用户要求包含类型引用，则不跳过
+	config.EnableFormat = *enableFormat          // 设置是否启用格式化
 
 	// 解析接口列表
 	if *interfaces != "" {
@@ -79,6 +81,8 @@ func printUsage() {
         要处理的接口名称，逗号分隔（可选，默认处理所有带注释的接口）
   -include-type-refs
         生成类型引用声明（var _ 声明），用于确保 swaggo 识别类型
+  -fmt
+        启用代码格式化（swag fmt）
   -v    详细输出
 
 示例:
@@ -86,6 +90,7 @@ func printUsage() {
   %s -path ./api/user.go -interfaces "IUserAPI,IAdminAPI"
   %s -path ./api -package myapi -v
   %s -path ./api -include-type-refs  # 包含类型引用
+  %s -path ./api -fmt                # 启用格式化
 
 支持的注释:
 
@@ -129,7 +134,7 @@ func printUsage() {
     @TAG(Company;exclude="StartTransfer")     - 为所有方法添加标签，但排除 StartTransfer
     @SECURITY(ApiKeyAuth;exclude="method1,method2") - 为所有方法添加安全认证，但排除指定方法
 
-`, os.Args[0], os.Args[0], os.Args[0], os.Args[0], os.Args[0])
+`, os.Args[0], os.Args[0], os.Args[0], os.Args[0], os.Args[0], os.Args[0])
 }
 
 func init() {

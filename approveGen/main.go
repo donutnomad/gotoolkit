@@ -521,20 +521,12 @@ func main() {
 	if err := codes.Render(buf); err != nil {
 		panic(err)
 	}
-
-	// 格式化（按照顺序格式化imports排列)
-	out, err := formatOut1(outputFileName, buf.Bytes())
+	err := utils2.WriteFormat(outputFileName, buf.Bytes())
 	if err != nil {
 		panic(err)
 	}
-
-	// 输出到文件中
-	if err := os.WriteFile(outputFileName, out, 0644); err != nil {
-		panic(err)
-	}
-
 	pwd, _ := os.Getwd()
-	fmt.Println("Success:", filepath.Join(pwd, outputFileName))
+	fmt.Println("[approveGen] Success:", filepath.Join(pwd, outputFileName))
 }
 
 func genMethodParamsString(fields []*ast.Field, isResult bool, nameFor func(ast.Expr) string) string {

@@ -6,7 +6,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/donutnomad/gotoolkit/internal/gofmt"
+	"github.com/donutnomad/gotoolkit/internal/utils"
+	"github.com/donutnomad/gotoolkit/swagGen/format"
 	parsers "github.com/donutnomad/gotoolkit/swagGen/parser"
 )
 
@@ -27,7 +28,6 @@ func NewSwagGenApplication(config *GenerationConfig) *SwagGenApplication {
 		logger:     NewConsoleLogger(config.Verbose),
 		fileSystem: NewDefaultFileSystem(),
 	}
-
 	// Initialize components
 	app.initializeComponents()
 	return app
@@ -304,15 +304,17 @@ func (app *SwagGenApplication) writeOutput(output string) error {
 	// Determine output path
 	outputPath := app.determineOutputPath()
 
-	// Format code
-	formattedBytes, err := gofmt.FormatBytes([]byte(output))
+	err := utils.WriteFormat(outputPath, []byte(output))
 	if err != nil {
 		return NewGenerateError("code formatting failed", "", err)
 	}
 
-	// Write file
-	if err := app.fileSystem.WriteFile(outputPath, formattedBytes, 0644); err != nil {
-		return NewFileError("failed to write file", outputPath, err)
+	// 只有当 EnableFormat 为 true 时才执行格式化
+	if app.config.EnableFormat {
+		err = format.Format(outputPath)
+		if err != nil {
+			app.logger.Warn("swag fmt failed: %s", err)
+		}
 	}
 
 	app.logger.Info("successfully generated file: %s", outputPath)
