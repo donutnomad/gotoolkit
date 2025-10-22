@@ -18,7 +18,13 @@ type SortOrder struct {
 	Asc  bool
 }
 
-func (m SortNameMapping) Map(orders []SortOrder) []gsql.FieldOrder {
+func (m SortNameMapping) Map(orders []SortOrder, defaultOrder ...SortOrder) []gsql.FieldOrder {
+	if len(orders) == 0 {
+		orders = defaultOrder
+	}
+	if len(orders) == 0 {
+		return []gsql.FieldOrder{}
+	}
 	var ret []gsql.FieldOrder
 	for _, item := range orders {
 		if v, ok := m[item.Name]; ok {
