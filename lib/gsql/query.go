@@ -4,6 +4,7 @@ import (
 	"slices"
 
 	"github.com/donutnomad/gotoolkit/lib/gsql/field"
+	"golang.org/x/exp/constraints"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 	"gorm.io/gorm/logger"
@@ -189,6 +190,19 @@ func (b *QueryBuilder) ForceIndexForGroupBy(indexes ...string) *QueryBuilder {
 type Paginate struct {
 	Page     int
 	PageSize int
+}
+
+func NewPaginate[P1 constraints.Integer, P2 constraints.Integer](offset P1, limit P2) Paginate {
+	return Paginate{
+		Page:     (int(offset) / int(limit)) + 1,
+		PageSize: int(limit),
+	}
+}
+func NewPaginateWith(p interface {
+	GetOffset() uint64
+	GetLimit() uint64
+}) Paginate {
+	return NewPaginate(p.GetOffset(), p.GetLimit())
 }
 
 func (b *QueryBuilder) Paginate(p Paginate) *QueryBuilder {
