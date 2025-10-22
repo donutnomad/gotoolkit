@@ -129,10 +129,16 @@ func txTable(quote func(field string) string, name string, args ...any) (expr *c
 			}
 		}
 	} else if tables := strings.Split(name, "."); len(tables) == 2 {
-		expr = &clause.Expr{SQL: quote(name)}
+		if name != "DUAL" {
+			name = quote(name)
+		}
+		expr = &clause.Expr{SQL: name}
 		table = tables[1]
 	} else if name != "" {
-		expr = &clause.Expr{SQL: quote(name)}
+		if name != "DUAL" {
+			name = quote(name)
+		}
+		expr = &clause.Expr{SQL: name}
 		table = name
 	}
 	return

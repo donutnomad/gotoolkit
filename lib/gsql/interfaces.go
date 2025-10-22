@@ -3,6 +3,7 @@ package gsql
 import (
 	"context"
 	"database/sql"
+	"time"
 
 	"github.com/donutnomad/gotoolkit/lib/gsql/field"
 	"gorm.io/gorm"
@@ -22,7 +23,7 @@ func (e ExprTo) ToExpr() field.Expression {
 }
 
 type primitive interface {
-	~int | ~int8 | ~int16 | ~int32 | ~int64 | ~uint | ~uint8 | ~uint16 | ~uint32 | ~uint64 | ~float32 | ~float64 | ~string
+	~int | ~int8 | ~int16 | ~int32 | ~int64 | ~uint | ~uint8 | ~uint16 | ~uint32 | ~uint64 | ~float32 | ~float64 | ~string | time.Time | *time.Time
 }
 
 type DBResult struct {

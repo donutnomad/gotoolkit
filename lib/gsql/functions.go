@@ -10,6 +10,38 @@ import (
 
 var Star field.IField = field.NewBase("", "*")
 
+// CastType 定义CAST和CONVERT支持的MySQL数据类型
+type CastType string
+
+const (
+	// 二进制类型
+	CastTypeBinary CastType = "BINARY" // 二进制字符串
+	CastTypeChar   CastType = "CHAR"   // 字符串
+
+	// 日期时间类型
+	CastTypeDate     CastType = "DATE"     // 日期 (YYYY-MM-DD)
+	CastTypeDatetime CastType = "DATETIME" // 日期时间 (YYYY-MM-DD HH:MM:SS)
+	CastTypeTime     CastType = "TIME"     // 时间 (HH:MM:SS)
+
+	// 数值类型
+	CastTypeDecimal  CastType = "DECIMAL"  // 十进制数，可指定精度如 DECIMAL(10,2)
+	CastTypeSigned   CastType = "SIGNED"   // 有符号整数
+	CastTypeUnsigned CastType = "UNSIGNED" // 无符号整数
+	CastTypeInteger  CastType = "INTEGER"  // 整数，与SIGNED等价
+	CastTypeInt      CastType = "INT"      // 整数，与SIGNED等价
+
+	// 浮点数类型
+	CastTypeFloat  CastType = "FLOAT"  // 单精度浮点数
+	CastTypeDouble CastType = "DOUBLE" // 双精度浮点数
+	CastTypeReal   CastType = "REAL"   // 实数，与DOUBLE等价
+
+	// JSON类型
+	CastTypeJSON CastType = "JSON" // JSON格式
+
+	// 其他类型
+	CastTypeYear CastType = "YEAR" // 年份
+)
+
 func Primitive[T primitive](value T) field.ExpressionTo {
 	return ExprTo{Expr("?", value)}
 }
@@ -932,6 +964,57 @@ func NULLIF(expr1, expr2 any) field.ExpressionTo {
 	return ExprTo{clause.Expr{
 		SQL:  "NULLIF(?, ?)",
 		Vars: []any{expr1, expr2},
+	}}
+}
+
+// ==================== 类型转换函数 ====================
+
+// CAST 将表达式转换为指定的数据类型
+// SELECT CAST('123' AS UNSIGNED);
+// SELECT CAST('2023-10-26' AS DATE);
+// SELECT CAST(price AS CHAR) FROM products;
+// SELECT CAST(amount AS DECIMAL(10,2)) FROM orders;
+// 使用示例：
+//
+//	CAST(field, CastTypeSigned)
+//	CAST(field, CastTypeDate)
+//	CAST(field, "DECIMAL(10,2)") // 对于需要指定精度的类型，可以直接传字符串
+func CAST(expr field.Expression, dataType CastType) field.ExpressionTo {
+	return ExprTo{clause.Expr{
+		SQL:  fmt.Sprintf("CAST(? AS %s)", dataType),
+		Vars: []any{expr},
+	}}
+}
+
+// CONVERT 将表达式转换为指定的数据类型或字符集
+// 语法1: CONVERT(expr, type) - 类型转换，与CAST类似
+// SELECT CONVERT('123', UNSIGNED);
+// SELECT CONVERT('2023-10-26', DATE);
+// SELECT CONVERT(price, CHAR) FROM products;
+// SELECT CONVERT(amount, DECIMAL(10,2)) FROM orders;
+// 语法2: CONVERT(expr USING charset) - 字符集转换，使用CONVERT_CHARSET函数
+// 使用示例：
+//
+//	CONVERT(field, CastTypeSigned)
+//	CONVERT(field, CastTypeDate)
+//	CONVERT(field, "DECIMAL(10,2)") // 对于需要指定精度的类型，可以直接传字符串
+func CONVERT(expr field.Expression, dataType CastType) field.ExpressionTo {
+	return ExprTo{clause.Expr{
+		SQL:  fmt.Sprintf("CONVERT(?, %s)", dataType),
+		Vars: []any{expr},
+	}}
+}
+
+// CONVERT_CHARSET 将表达式转换为指定的字符集
+// SELECT CONVERT(name USING utf8mb4) FROM users;
+// SELECT CONVERT(content USING latin1) FROM articles;
+// SELECT CONVERT(description USING gbk) FROM products;
+// SELECT CONVERT(text USING utf8) FROM messages;
+// 常用字符集: utf8, utf8mb4, latin1, gbk, ascii, binary
+func CONVERT_CHARSET(expr field.Expression, charset string) field.ExpressionTo {
+	return ExprTo{clause.Expr{
+		SQL:  fmt.Sprintf("CONVERT(? USING %s)", charset),
+		Vars: []any{expr},
 	}}
 }
 

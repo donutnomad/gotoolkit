@@ -193,17 +193,13 @@ func (f Comparable[T]) WithAlias(alias string) Comparable[T] {
 	return NewComparableWith[T](b)
 }
 
+// FromUnixTime 将Unix时间戳转换为DATETIME类型
 func (f Comparable[T]) FromUnixTime() Comparable[T] {
-	expr := clause.Expr{
+	b := NewBaseFromSql(clause.Expr{
 		SQL:  "FROM_UNIXTIME(?)",
 		Vars: []any{f},
-	}
-	b := NewBaseFromSql(expr, "")
-	return Comparable[T]{
-		Base:           *b,
-		comparableImpl: comparableImpl[T]{IField: b},
-		pointerImpl:    pointerImpl{IField: b},
-	}
+	}, "")
+	return NewComparableWith[T](*b)
 }
 
 // TODO: 缺少一个BETWEEN操作符
