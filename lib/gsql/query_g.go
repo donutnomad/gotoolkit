@@ -58,7 +58,7 @@ func PluckG[T any, Field interface {
 	return SelectG[T](f)
 }
 
-func FromG[T any, Table interface {
+func From[T any, Table interface {
 	TableName() string
 	ModelType() *T
 }](from Table) *QueryBuilderG[T] {
