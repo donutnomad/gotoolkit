@@ -17,10 +17,11 @@ func main() {
 	var structNames = flag.String("struct", "", "结构体名称,多个使用逗号分隔")
 	var prefix = flag.String("prefix", "", "生成的结构体前缀")
 	var outputDir = flag.String("out", "", "输出目录路径,支持$PROJECT_ROOT变量")
+	var patch = flag.Bool("patch", false, "生成GORM Patch结构体和Build方法")
 	flag.Parse()
 
 	if *structNames == "" {
-		log.Fatal("请指定结构体名称,使用 -struct 参数")
+		log.Fatal("[gormgen] 请指定结构体名称,使用 -struct 参数")
 	}
 
 	// 解析输出目录
@@ -29,7 +30,7 @@ func main() {
 		var err error
 		finalOutputDir, err = resolveOutputDir(*outputDir)
 		if err != nil {
-			log.Fatalf("解析输出目录失败: %v", err)
+			log.Fatalf("[gormgen] 解析输出目录失败: %v", err)
 		}
 	}
 
@@ -52,7 +53,7 @@ func main() {
 		// 查找包含指定结构体的文件
 		files, err := findGoFiles(*dir)
 		if err != nil {
-			log.Fatalf("查找Go文件失败: %v", err)
+			log.Fatalf("[gormgen] 查找Go文件失败: %v", err)
 		}
 
 		var targetFile string
@@ -64,21 +65,21 @@ func main() {
 		}
 
 		if targetFile == "" {
-			log.Fatalf("在目录 %s 中未找到包含结构体 %s 的文件", *dir, structName)
+			log.Fatalf("[gormgen] 在目录 %s 中未找到包含结构体 %s 的文件", *dir, structName)
 		}
 
-		fmt.Printf("[setterGen] 找到结构体 %s 在文件: %s\n", structName, targetFile)
+		fmt.Printf("[gormgen] 找到结构体 %s 在文件: %s\n", structName, targetFile)
 
 		// 解析结构体
 		structInfo, err := structparse.ParseStruct(targetFile, structName)
 		if err != nil {
-			log.Fatalf("解析结构体 %s 失败: %v", structName, err)
+			log.Fatalf("[gormgen] 解析结构体 %s 失败: %v", structName, err)
 		}
 
 		// 推导表名
 		tableName, err := inferTableName(targetFile, structName)
 		if err != nil {
-			log.Fatalf("推导表名失败: %v", err)
+			log.Fatalf("[gormgen] 推导表名失败: %v", err)
 		}
 
 		// 转换为GORM模型
@@ -120,9 +121,19 @@ func main() {
 	if len(allModels) > 0 {
 		err := generateGormQueryFileForMultiple(outputFile, allModels)
 		if err != nil {
-			log.Fatalf("生成查询文件失败: %v", err)
+			log.Fatalf("[gormgen] 生成查询文件失败: %v", err)
 		}
-		fmt.Printf("[setterGen] 成功生成查询文件: %s (包含 %d 个结构体)\n", outputFile, len(allModels))
+		fmt.Printf("[gormgen] 成功生成 %s (包含 %d 个结构体)\n", outputFile, len(allModels))
+	}
+
+	if *patch {
+		// GORM Patch生成模式
+		outputFile = outputFile[:len(outputFile)-9] + "_patch.go"
+		err := generateGormPatchFileForMultiple(outputFile, allModels)
+		if err != nil {
+			log.Fatalf("[gormgen] 生成GORM patch文件失败: %v", err)
+		}
+		fmt.Printf("[gormgen] 成功生成 %s (包含 %d 个结构体)\n", outputFile, len(allModels))
 	}
 }
 
@@ -162,7 +173,7 @@ func resolveOutputDir(outputDir string) (string, error) {
 	// 查找项目根目录
 	projectRoot, err := findProjectRoot(".")
 	if err != nil {
-		return "", fmt.Errorf("查找项目根目录失败: %v", err)
+		return "", fmt.Errorf("[gormgen] 查找项目根目录失败: %v", err)
 	}
 
 	// 替换$PROJECT_ROOT变量
@@ -170,7 +181,7 @@ func resolveOutputDir(outputDir string) (string, error) {
 
 	// 确保目录存在
 	if err := os.MkdirAll(resolvedDir, 0755); err != nil {
-		return "", fmt.Errorf("创建输出目录失败: %v", err)
+		return "", fmt.Errorf("[gormgen] 创建输出目录失败: %v", err)
 	}
 
 	return resolvedDir, nil
@@ -197,5 +208,5 @@ func findProjectRoot(startDir string) (string, error) {
 		currentDir = parentDir
 	}
 
-	return "", fmt.Errorf("未找到包含go.mod的目录")
+	return "", fmt.Errorf("[gormgen] 未找到包含go.mod的目录")
 }

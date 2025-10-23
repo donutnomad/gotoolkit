@@ -296,6 +296,10 @@ func generateSetterMethodsWithFields(structInfo *StructInfo, fields []FieldInfo)
 
 	// 添加固定的ExportPatch方法
 	sb.WriteString(fmt.Sprintf("func (%s *%s) ExportPatch() *%s {\n", receiverName, structInfo.Name, patchTypeName))
+	sb.WriteString(fmt.Sprintf("\tif %s == nil {\n", receiverName))
+	sb.WriteString(fmt.Sprintf("\tvar def %s\n", patchTypeName))
+	sb.WriteString(fmt.Sprintf("\treturn &def\n"))
+	sb.WriteString(fmt.Sprintf("\t}\n"))
 	sb.WriteString(fmt.Sprintf("\treturn &%s.patch\n", receiverName))
 	sb.WriteString("}\n\n")
 
