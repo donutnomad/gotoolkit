@@ -343,6 +343,11 @@ func (b *QueryBuilderG[T]) Create(db IDB, value *T) DBResult {
 }
 
 func (b *QueryBuilderG[T]) Update(db IDB, values any) DBResult {
+	if v, ok := values.(map[string]any); ok {
+		if len(v) == 0 {
+			return DBResult{nil, 0}
+		}
+	}
 	ret := b.build(db).Updates(values)
 	return DBResult{
 		ret.Error,
@@ -672,7 +677,6 @@ func firstLast[T any](b *QueryBuilderG[T], db IDB, order, desc bool, dest any) e
 
 	stmt.RaiseErrorOnNotFound = true
 	ret := Scan(b.logLevel, tx, dest)
-	//if err := tx.Find(dest).Error; err != nil {
 	if err := ret.Error; err != nil {
 		return err
 	}

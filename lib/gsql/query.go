@@ -253,11 +253,7 @@ func (b *QueryBuilder) Create(db IDB, value any) DBResult {
 }
 
 func (b *QueryBuilder) Update(db IDB, value any) DBResult {
-	ret := b.build(db).Updates(value)
-	return DBResult{
-		ret.Error,
-		ret.RowsAffected,
-	}
+	return b.as().Update(db, value)
 }
 
 func (b *QueryBuilder) Delete(db IDB, dest any) DBResult {
@@ -269,8 +265,7 @@ func (b *QueryBuilder) Delete(db IDB, dest any) DBResult {
 }
 
 func (b *QueryBuilder) Count(db IDB) (count int64, _ error) {
-	ret := b.build(db).Count(&count)
-	return count, ret.Error
+	return b.as().Count(db)
 }
 
 func (b *QueryBuilder) Exist(db IDB) (bool, error) {
@@ -299,7 +294,6 @@ func (b *QueryBuilder) Debug() *QueryBuilder {
 func (b *QueryBuilder) Find(db IDB, dest any) error {
 	tx := b.build(db)
 	ret := Scan(b.logLevel, tx, dest)
-	//ret := b.build(db).Find(dest)
 	if ret.RowsAffected == 0 {
 		return nil
 	} else if ret.Error != nil {
