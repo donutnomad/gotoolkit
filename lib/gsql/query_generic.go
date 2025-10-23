@@ -343,6 +343,10 @@ func (b *QueryBuilderG[T]) Create(db IDB, value *T) DBResult {
 }
 
 func (b *QueryBuilderG[T]) Update(db IDB, values any) DBResult {
+	switch v := values.(type) {
+	case interface{ Build() map[string]any }:
+		values = v.Build()
+	}
 	if v, ok := values.(map[string]any); ok {
 		if len(v) == 0 {
 			return DBResult{nil, 0}
@@ -353,6 +357,12 @@ func (b *QueryBuilderG[T]) Update(db IDB, values any) DBResult {
 		ret.Error,
 		ret.RowsAffected,
 	}
+}
+
+func (b *QueryBuilderG[T]) UpdateG(db IDB, value interface {
+	Build() map[string]any
+}) DBResult {
+	return b.Update(db, value.Build())
 }
 
 func (b *QueryBuilderG[T]) Delete(db IDB) DBResult {
