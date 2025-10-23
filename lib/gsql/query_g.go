@@ -3,6 +3,7 @@ package gsql
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -453,11 +454,13 @@ func (b *QueryBuilderG[T]) build(db IDB) *gorm.DB {
 	tx := db.Session(&gorm.Session{
 		Initialized: true,
 	})
-	tx.Config.ClauseBuilders["CTE"] = func(c clause.Clause, builder clause.Builder) {
+	m := maps.Clone(tx.Config.ClauseBuilders)
+	m["CTE"] = func(c clause.Clause, builder clause.Builder) {
 		if cte, ok := c.Expression.(CTEClause); ok {
 			cte.Build(builder)
 		}
 	}
+	tx.Config.ClauseBuilders = m
 	b.buildStmt(tx.Statement, getQuoteFunc())
 	return tx
 }
