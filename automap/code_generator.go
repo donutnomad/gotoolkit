@@ -228,24 +228,26 @@ func (cg *CodeGenerator) generateJSONFieldMappings(builder *strings.Builder) {
 				}
 			}
 
-			// 生成嵌套字段的映射
+			// 生成嵌套字段的映射 - 拆分为单独的JSON字段设置，并按嵌套对象分组
 			for nestedField, subFieldMapping := range nestedFields.NestedFields {
-				// 构建嵌套对象的设置条件
-				var conditions []string
-				for aField := range subFieldMapping {
-					conditions = append(conditions, fmt.Sprintf("fields.%s.IsPresent()", aField))
-				}
+				if len(subFieldMapping) > 0 {
+					// 添加分组注释
+					builder.WriteString(fmt.Sprintf("\t\t// %s 字段组\n", nestedField))
+					builder.WriteString("\t\t{\n")
 
-				if len(conditions) > 0 {
-					conditionStr := strings.Join(conditions, " && ")
-					builder.WriteString(fmt.Sprintf("\t\tif %s {\n", conditionStr))
+					for aField, jsonSubField := range subFieldMapping {
+						// 构建完整的JSON字段路径，如 "support_resource.other_docs"
+						fullJSONField := fmt.Sprintf("%s.%s", cg.toSnakeCase(nestedField), cg.toSnakeCase(jsonSubField))
 
-					// 构建嵌套对象值
-					nestedValue := cg.buildNestedObjectValue(bFieldName, nestedField, subFieldMapping)
-					// 使用snake_case的JSON字段名
-					jsonNestedField := cg.toSnakeCase(nestedField)
-					builder.WriteString(fmt.Sprintf("\t\t\tret[\"%s\"] = set.Set(\"%s\", %s)\n",
-						jsonColumnName, jsonNestedField, nestedValue))
+						// 构建字段值访问路径，如 b.Attribute.Data().SupportResource.OtherDocs
+						fieldValue := fmt.Sprintf("b.%s.Data().%s.%s", bFieldName, nestedField, jsonSubField)
+
+						builder.WriteString(fmt.Sprintf("\t\t\tif fields.%s.IsPresent() {\n", aField))
+						builder.WriteString(fmt.Sprintf("\t\t\t\tret[\"%s\"] = set.Set(\"%s\", %s)\n",
+							jsonColumnName, fullJSONField, fieldValue))
+						builder.WriteString("\t\t\t}\n")
+					}
+
 					builder.WriteString("\t\t}\n")
 				}
 			}

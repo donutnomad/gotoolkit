@@ -321,29 +321,18 @@ func (ma *MappingAnalyzer) buildFieldPath(expr ast.Expr) string {
 
 // getTopLevelField 获取顶层字段名
 func (ma *MappingAnalyzer) getTopLevelField(fieldName string) string {
-	// 特殊处理一些已知的字段映射
-	switch fieldName {
-	case "ID", "CreatedAt", "DeletedAt":
-		// 这些字段来自Base嵌入结构体，但在A中是直接字段
+	// 在A类型中查找该字段是否属于某个结构体字段
+	if ma.hasDirectField(fieldName) {
 		return fieldName
-	case "Name", "Author", "Year":
-		// 这些字段来自Book结构体
-		return "Book"
-	default:
-		// 在A类型中查找该字段是否属于某个结构体字段
-		if ma.hasDirectField(fieldName) {
-			return fieldName
-		}
-
-		// 检查是否属于已知的结构体字段
-		for _, field := range ma.aType.Fields {
-			if field.IsEmbedded {
-				// 这是嵌入字段，假设fieldName属于这个字段
-				return field.Name
-			}
-		}
 	}
 
+	// 检查是否属于已知的结构体字段
+	for _, field := range ma.aType.Fields {
+		if field.IsEmbedded {
+			// 这是嵌入字段，假设fieldName属于这个字段
+			return field.Name
+		}
+	}
 	return fieldName
 }
 
@@ -657,21 +646,7 @@ func (ma *MappingAnalyzer) getJSONTagName(expr ast.Expr, fieldName string) strin
 
 // getJSONTagFromType 从类型定义中获取JSON标签
 func (ma *MappingAnalyzer) getJSONTagFromType(expr ast.Expr) string {
-	// 这是一个简化的实现，实际应用中需要更完整的解析
-	// 我们可以根据已知的B_Token结构体定义来映射
-
 	fieldName := ma.extractFieldName(expr)
-	switch fieldName {
-	case "Name":
-		return "name"
-	case "Symbol":
-		return "symbol"
-	case "Decimals":
-		return "decimals"
-	case "TotalSupply":
-		return "total_supply"
-	}
-
 	// 默认返回snake_case
 	return ma.toSnakeCase(fieldName)
 }
