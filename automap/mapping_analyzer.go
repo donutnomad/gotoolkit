@@ -584,10 +584,58 @@ func (ma *MappingAnalyzer) analyzeJSONSubFields(compLit *ast.CompositeLit, jsonM
 			aFields := ma.extractAFieldsFromExpr(kv.Value)
 
 			if len(aFields) > 0 && jsonFieldName != "" {
-				// 尝试获取JSON标签名，如果没有则使用字段名的snake_case
-				jsonTagName := ma.getJSONTagName(kv.Key, jsonFieldName)
-				// 映射A字段到JSON子字段
-				jsonMapping.SubFields[aFields[0]] = jsonTagName
+				// 检查值是否为嵌套的复合字面量
+				if nestedCompLit, ok := kv.Value.(*ast.CompositeLit); ok {
+					// 这是嵌套结构，需要递归分析
+					ma.analyzeNestedJSONField(jsonFieldName, nestedCompLit, jsonMapping)
+				} else {
+					// 这是简单字段
+					// 尝试获取JSON标签名，如果没有则使用字段名的snake_case
+					jsonTagName := ma.getJSONTagName(kv.Key, jsonFieldName)
+					// 映射A字段到JSON子字段
+					jsonMapping.SubFields[aFields[0]] = jsonTagName
+				}
+			} else if jsonFieldName != "" {
+				// 即使没有找到A字段，也要检查是否是嵌套结构
+				if nestedCompLit, ok := kv.Value.(*ast.CompositeLit); ok {
+					ma.analyzeNestedJSONFieldWithoutAField(jsonFieldName, nestedCompLit, jsonMapping)
+				}
+			}
+		}
+	}
+}
+
+// analyzeNestedJSONField 分析嵌套JSON字段
+func (ma *MappingAnalyzer) analyzeNestedJSONField(parentField string, compLit *ast.CompositeLit, jsonMapping *JSONMapping) {
+	for _, elt := range compLit.Elts {
+		if kv, ok := elt.(*ast.KeyValueExpr); ok {
+			nestedFieldName := ma.extractFieldName(kv.Key)
+			aFields := ma.extractAFieldsFromExpr(kv.Value)
+
+			if len(aFields) > 0 && nestedFieldName != "" {
+				// 构建嵌套的JSON字段名，如 "support_resource.placement_agreements"
+				nestedJSONField := parentField + "." + nestedFieldName
+
+				// 映射A字段到嵌套的JSON子字段
+				jsonMapping.SubFields[aFields[0]] = nestedJSONField
+			}
+		}
+	}
+}
+
+// analyzeNestedJSONFieldWithoutAField 分析没有直接A字段对应的嵌套JSON字段
+func (ma *MappingAnalyzer) analyzeNestedJSONFieldWithoutAField(parentField string, compLit *ast.CompositeLit, jsonMapping *JSONMapping) {
+	for _, elt := range compLit.Elts {
+		if kv, ok := elt.(*ast.KeyValueExpr); ok {
+			nestedFieldName := ma.extractFieldName(kv.Key)
+			aFields := ma.extractAFieldsFromExpr(kv.Value)
+
+			if len(aFields) > 0 && nestedFieldName != "" {
+				// 构建嵌套的JSON字段名，如 "support_resource.placement_agreements"
+				nestedJSONField := parentField + "." + nestedFieldName
+
+				// 映射A字段到嵌套的JSON子字段
+				jsonMapping.SubFields[aFields[0]] = nestedJSONField
 			}
 		}
 	}

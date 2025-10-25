@@ -212,19 +212,42 @@ func (cg *CodeGenerator) generateJSONFieldMappings(builder *strings.Builder) {
 				}
 			}
 
-			builder.WriteString(fmt.Sprintf("\t\tset := datatypes.JSONSet(\"%s\")\n", jsonColumnName))
+			// 分析嵌套字段结构
+			nestedFields := cg.analyzeNestedFields(jsonMapping.SubFields)
 
-			// 为每个A字段生成JSON子字段映射
-			// 注意：值应该从B.JSON字段中获取，而不是从A字段
-			for aField, jsonSubField := range jsonMapping.SubFields {
-				// 构建B结构体中JSON字段的访问路径
-				// 例如：b.Token.Name, b.Token.Symbol等
-				jsonFieldValue := cg.buildJSONFieldValue(bFieldName, jsonSubField)
+			// 生成简单字段的映射
+			if len(nestedFields.SimpleFields) > 0 {
+				builder.WriteString(fmt.Sprintf("\t\tset := datatypes.JSONSet(\"%s\")\n", jsonColumnName))
 
-				builder.WriteString(fmt.Sprintf("\t\tif fields.%s.IsPresent() {\n", aField))
-				builder.WriteString(fmt.Sprintf("\t\t\tret[\"%s\"] = set.Set(\"%s\", %s)\n",
-					jsonColumnName, jsonSubField, jsonFieldValue))
-				builder.WriteString("\t\t}\n")
+				for aField, jsonSubField := range nestedFields.SimpleFields {
+					jsonFieldValue := cg.buildJSONFieldValue(bFieldName, jsonSubField)
+					builder.WriteString(fmt.Sprintf("\t\tif fields.%s.IsPresent() {\n", aField))
+					builder.WriteString(fmt.Sprintf("\t\t\tret[\"%s\"] = set.Set(\"%s\", %s)\n",
+						jsonColumnName, jsonSubField, jsonFieldValue))
+					builder.WriteString("\t\t}\n")
+				}
+			}
+
+			// 生成嵌套字段的映射
+			for nestedField, subFieldMapping := range nestedFields.NestedFields {
+				// 构建嵌套对象的设置条件
+				var conditions []string
+				for aField := range subFieldMapping {
+					conditions = append(conditions, fmt.Sprintf("fields.%s.IsPresent()", aField))
+				}
+
+				if len(conditions) > 0 {
+					conditionStr := strings.Join(conditions, " && ")
+					builder.WriteString(fmt.Sprintf("\t\tif %s {\n", conditionStr))
+
+					// 构建嵌套对象值
+					nestedValue := cg.buildNestedObjectValue(bFieldName, nestedField, subFieldMapping)
+					// 使用snake_case的JSON字段名
+					jsonNestedField := cg.toSnakeCase(nestedField)
+					builder.WriteString(fmt.Sprintf("\t\t\tret[\"%s\"] = set.Set(\"%s\", %s)\n",
+						jsonColumnName, jsonNestedField, nestedValue))
+					builder.WriteString("\t\t}\n")
+				}
 			}
 
 			builder.WriteString("\t}")
@@ -421,6 +444,60 @@ func (cg *CodeGenerator) generateFieldMappingsString() string {
 	var builder strings.Builder
 	cg.generateFieldMappings(&builder)
 	return builder.String()
+}
+
+// NestedFieldAnalysis 嵌套字段分析结果
+type NestedFieldAnalysis struct {
+	SimpleFields map[string]string            // 简单字段：A字段 -> JSON字段
+	NestedFields map[string]map[string]string // 嵌套字段：嵌套名 -> (A字段 -> JSON子字段)
+}
+
+// analyzeNestedFields 分析嵌套字段结构
+func (cg *CodeGenerator) analyzeNestedFields(subFields map[string]string) NestedFieldAnalysis {
+	analysis := NestedFieldAnalysis{
+		SimpleFields: make(map[string]string),
+		NestedFields: make(map[string]map[string]string),
+	}
+
+	// 通过分析JSON字段名来识别嵌套结构
+	// 例如：issuer.issuer_name 表示嵌套在 issuer 中的 issuer_name
+	for aField, jsonField := range subFields {
+		if dotIndex := strings.Index(jsonField, "."); dotIndex != -1 {
+			// 这是一个嵌套字段
+			nestedField := jsonField[:dotIndex]
+			subFieldName := jsonField[dotIndex+1:]
+
+			if analysis.NestedFields[nestedField] == nil {
+				analysis.NestedFields[nestedField] = make(map[string]string)
+			}
+			analysis.NestedFields[nestedField][aField] = subFieldName
+		} else {
+			// 这是一个简单字段
+			analysis.SimpleFields[aField] = jsonField
+		}
+	}
+
+	return analysis
+}
+
+// buildNestedObjectValue 构建嵌套对象值
+func (cg *CodeGenerator) buildNestedObjectValue(bFieldName, nestedField string, subFieldMapping map[string]string) string {
+	// 直接使用嵌套对象，例如：b.Attribute.Data().SupportResource 或 b.Attribute.Data().Issuer
+	return fmt.Sprintf("b.%s.Data().%s", bFieldName, nestedField)
+}
+
+// getNestedType 获取嵌套类型名
+func (cg *CodeGenerator) getNestedType(nestedField string) string {
+	// 根据JSON字段名推断嵌套类型
+	switch nestedField {
+	case "SupportResource":
+		return "SupportResourceInfo"
+	case "Issuer":
+		return "IssuerInfo"
+	default:
+		// 默认使用首字母大写的格式
+		return cg.toPascalCase(nestedField)
+	}
 }
 
 // GenerateImports 生成需要的导入语句
