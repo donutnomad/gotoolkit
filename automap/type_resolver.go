@@ -182,13 +182,8 @@ func (tr *TypeResolver) resolvePackagePath(packageName, currentFile string) (str
 
 	// 对于相同包名的情况，先尝试当前包
 	dir := filepath.Dir(currentFile)
-	pkgs, err := parser.ParseDir(tr.fset, dir, nil, parser.PackageClauseOnly)
-	if err == nil {
-		for pkgName := range pkgs {
-			if pkgName == packageName {
-				return dir, nil
-			}
-		}
+	if pkgName := tr.findPackageNameInDir(dir, packageName); pkgName != "" {
+		return dir, nil
 	}
 
 	// 检查是否在import映射中
@@ -368,22 +363,72 @@ func (tr *TypeResolver) isStandardLibrary(packageName string) bool {
 	return standardLibs[packageName]
 }
 
+// findPackageNameInDir 在目录中查找指定包名
+func (tr *TypeResolver) findPackageNameInDir(dir, targetPkgName string) string {
+	// 读取目录中的所有 .go 文件
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return ""
+	}
+
+	// 检查每个 .go 文件的包声明
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".go") {
+			filePath := filepath.Join(dir, entry.Name())
+			file, err := parser.ParseFile(tr.fset, filePath, nil, parser.PackageClauseOnly)
+			if err != nil {
+				continue
+			}
+			if file.Name.Name == targetPkgName {
+				return targetPkgName
+			}
+		}
+	}
+
+	return ""
+}
+
+// parseDirectory 解析目录中的所有 .go 文件
+func (tr *TypeResolver) parseDirectory(dirPath string) ([]*ast.File, error) {
+	var files []*ast.File
+
+	// 读取目录
+	entries, err := os.ReadDir(dirPath)
+	if err != nil {
+		return nil, err
+	}
+
+	// 解析每个 .go 文件
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".go") {
+			filePath := filepath.Join(dirPath, entry.Name())
+			file, err := parser.ParseFile(tr.fset, filePath, nil, parser.AllErrors)
+			if err != nil {
+				// 如果单个文件解析失败，继续解析其他文件
+				continue
+			}
+			files = append(files, file)
+		}
+	}
+
+	return files, nil
+}
+
 // findTypeDefinition 查找类型定义
 func (tr *TypeResolver) findTypeDefinition(pkgPath, typeName string) (*ast.TypeSpec, string, error) {
-	pkgs, err := parser.ParseDir(tr.fset, pkgPath, nil, parser.AllErrors)
+	// 解析目录中的所有文件
+	files, err := tr.parseDirectory(pkgPath)
 	if err != nil {
 		return nil, "", err
 	}
 
-	for _, pkg := range pkgs {
-		for _, file := range pkg.Files {
-			for _, decl := range file.Decls {
-				if genDecl, ok := decl.(*ast.GenDecl); ok {
-					for _, spec := range genDecl.Specs {
-						if typeSpec, ok := spec.(*ast.TypeSpec); ok && typeSpec.Name.Name == typeName {
-							filePath := tr.fset.Position(file.Pos()).Filename
-							return typeSpec, filePath, nil
-						}
+	for _, file := range files {
+		for _, decl := range file.Decls {
+			if genDecl, ok := decl.(*ast.GenDecl); ok {
+				for _, spec := range genDecl.Specs {
+					if typeSpec, ok := spec.(*ast.TypeSpec); ok && typeSpec.Name.Name == typeName {
+						filePath := tr.fset.Position(file.Pos()).Filename
+						return typeSpec, filePath, nil
 					}
 				}
 			}
@@ -563,20 +608,14 @@ func (tr *TypeResolver) parseJSONFields(expr ast.Expr) []JSONFieldInfo {
 		// 检查是否是简单类型（不是结构体）
 		if tr.isSimpleType(typeStr) {
 			// 对于简单类型如 []string, int, string 等，不解析为JSON字段
-			fmt.Printf("DEBUG: 简单类型 %s 不解析JSON字段\n", typeStr)
 			return []JSONFieldInfo{}
 		}
 
 		// 对于复杂类型，尝试解析结构体字段
-		fmt.Printf("DEBUG: 复杂类型 %s 尝试解析结构体字段\n", typeStr)
-
 		// 尝试解析类型定义
 		structFields := tr.parseStructFieldsFromType(typeStr)
 		if len(structFields) > 0 {
-			fmt.Printf("DEBUG: 成功解析出 %d 个字段\n", len(structFields))
 			return structFields
-		} else {
-			fmt.Printf("DEBUG: 无法解析类型 %s 的字段\n", typeStr)
 		}
 	}
 
@@ -586,16 +625,12 @@ func (tr *TypeResolver) parseJSONFields(expr ast.Expr) []JSONFieldInfo {
 
 // parseStructFieldsFromType 从类型字符串解析结构体字段
 func (tr *TypeResolver) parseStructFieldsFromType(typeStr string) []JSONFieldInfo {
-	// 动态解析结构体字段，不使用硬编码
-	fmt.Printf("DEBUG: 开始动态解析类型 %s 的结构体字段\n", typeStr)
-
 	// 构建缓存键，包含可能的包前缀
 	cacheKeys := []string{typeStr, "domain." + typeStr, "automap." + typeStr}
 
 	// 首先尝试从当前已解析的类型中查找
 	for _, cacheKey := range cacheKeys {
 		if cachedType, exists := tr.cache[cacheKey]; exists {
-			fmt.Printf("DEBUG: 在缓存中找到类型 %s -> %s，字段数: %d\n", cacheKey, typeStr, len(cachedType.Fields))
 			return tr.convertFieldsToJSONFields(cachedType.Fields)
 		}
 	}
@@ -608,7 +643,6 @@ func (tr *TypeResolver) parseStructFieldsFromType(typeStr string) []JSONFieldInf
 
 	// 尝试从domain包解析
 	if err := tr.resolveTypeFromDomain(typeInfo); err == nil {
-		fmt.Printf("DEBUG: 从domain包成功解析类型 %s，找到 %d 个字段\n", typeStr, len(typeInfo.Fields))
 		// 缓存解析结果
 		cacheKey := "domain." + typeStr
 		cachedCopy := *typeInfo
@@ -618,22 +652,17 @@ func (tr *TypeResolver) parseStructFieldsFromType(typeStr string) []JSONFieldInf
 
 	// 尝试从当前包解析
 	if err := tr.resolveTypeFromCurrentPackage(typeInfo); err == nil {
-		fmt.Printf("DEBUG: 从当前包成功解析类型 %s，找到 %d 个字段\n", typeStr, len(typeInfo.Fields))
 		// 缓存解析结果
 		cacheKey := "automap." + typeStr
 		cachedCopy := *typeInfo
 		tr.cache[cacheKey] = &cachedCopy
 		return tr.convertFieldsToJSONFields(typeInfo.Fields)
 	}
-
-	fmt.Printf("DEBUG: 无法解析类型 %s 的结构体字段\n", typeStr)
 	return []JSONFieldInfo{}
 }
 
 // isSimpleType 检查是否为简单类型（非结构体）
 func (tr *TypeResolver) isSimpleType(typeStr string) bool {
-	fmt.Printf("DEBUG: 检查类型是否为简单类型: %s\n", typeStr)
-
 	// 基本类型
 	simpleTypes := map[string]bool{
 		"string": true, "int": true, "int64": true, "float64": true, "bool": true,
@@ -643,23 +672,19 @@ func (tr *TypeResolver) isSimpleType(typeStr string) bool {
 
 	// 检查是否为已知的简单类型
 	if simpleTypes[typeStr] {
-		fmt.Printf("DEBUG: 类型 %s 在简单类型列表中\n", typeStr)
 		return true
 	}
 
 	// 检查是否以[]开头（切片类型）
 	if strings.HasPrefix(typeStr, "[]") {
-		fmt.Printf("DEBUG: 类型 %s 是切片类型\n", typeStr)
 		return true
 	}
 
 	// 检查是否以map开头（map类型）
 	if strings.HasPrefix(typeStr, "map[") {
-		fmt.Printf("DEBUG: 类型 %s 是map类型\n", typeStr)
 		return true
 	}
 
-	fmt.Printf("DEBUG: 类型 %s 不是简单类型\n", typeStr)
 	return false
 }
 
@@ -791,44 +816,43 @@ func (tr *TypeResolver) toSnakeCase(s string) string {
 func (tr *TypeResolver) parseTypeMethods(typeName, pkgPath string) ([]MethodInfo, error) {
 	var methods []MethodInfo
 
-	pkgs, err := parser.ParseDir(tr.fset, pkgPath, nil, parser.AllErrors)
+	// 解析目录中的所有文件
+	files, err := tr.parseDirectory(pkgPath)
 	if err != nil {
 		return nil, err
 	}
 
-	for _, pkg := range pkgs {
-		for _, file := range pkg.Files {
-			for _, decl := range file.Decls {
-				if fn, ok := decl.(*ast.FuncDecl); ok {
-					// 检查是否为该类型的方法
-					if fn.Recv != nil && len(fn.Recv.List) > 0 {
-						recv := fn.Recv.List[0]
-						if tr.isReceiverType(recv.Type, typeName) {
-							method := MethodInfo{
-								Name:       fn.Name.Name,
-								IsExported: fn.Name.IsExported(),
-							}
-
-							// 解析参数
-							if fn.Type.Params != nil {
-								for _, param := range fn.Type.Params.List {
-									paramType := &TypeInfo{}
-									paramType.Name = tr.getFieldType(param.Type)
-									method.Params = append(method.Params, *paramType)
-								}
-							}
-
-							// 解析返回值
-							if fn.Type.Results != nil {
-								for _, result := range fn.Type.Results.List {
-									resultType := &TypeInfo{}
-									resultType.Name = tr.getFieldType(result.Type)
-									method.Returns = append(method.Returns, *resultType)
-								}
-							}
-
-							methods = append(methods, method)
+	for _, file := range files {
+		for _, decl := range file.Decls {
+			if fn, ok := decl.(*ast.FuncDecl); ok {
+				// 检查是否为该类型的方法
+				if fn.Recv != nil && len(fn.Recv.List) > 0 {
+					recv := fn.Recv.List[0]
+					if tr.isReceiverType(recv.Type, typeName) {
+						method := MethodInfo{
+							Name:       fn.Name.Name,
+							IsExported: fn.Name.IsExported(),
 						}
+
+						// 解析参数
+						if fn.Type.Params != nil {
+							for _, param := range fn.Type.Params.List {
+								paramType := &TypeInfo{}
+								paramType.Name = tr.getFieldType(param.Type)
+								method.Params = append(method.Params, *paramType)
+							}
+						}
+
+						// 解析返回值
+						if fn.Type.Results != nil {
+							for _, result := range fn.Type.Results.List {
+								resultType := &TypeInfo{}
+								resultType.Name = tr.getFieldType(result.Type)
+								method.Returns = append(method.Returns, *resultType)
+							}
+						}
+
+						methods = append(methods, method)
 					}
 				}
 			}

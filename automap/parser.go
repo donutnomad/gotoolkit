@@ -5,6 +5,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -12,9 +13,10 @@ import (
 
 // Parser AST解析器
 type Parser struct {
-	fset    *token.FileSet
-	pkgPath string
-	pkgName string
+	fset        *token.FileSet
+	pkgPath     string
+	pkgName     string
+	currentFile string
 }
 
 // NewParser 创建新的解析器
@@ -24,32 +26,44 @@ func NewParser() *Parser {
 	}
 }
 
+// SetCurrentFile 设置当前文件路径
+func (p *Parser) SetCurrentFile(filePath string) {
+	p.currentFile = filePath
+}
+
 // ParseFunction 解析函数签名
 func (p *Parser) ParseFunction(funcName string) (*FuncSignature, *TypeInfo, *TypeInfo, error) {
 	// 解析函数名格式（支持 "Func" 和 "X.Func" 格式）
 	receiver, actualFuncName := p.parseFunctionName(funcName)
 
-	// 直接使用当前目录解析包
-	pkg, err := p.parsePackage(".")
+	// 使用当前文件所在目录解析包
+	var parsePath string
+	if p.currentFile != "" {
+		parsePath = p.currentFile
+	} else {
+		parsePath = "."
+	}
+
+	file, err := p.parseFile(parsePath)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("解析包失败: %w", err)
+		return nil, nil, nil, fmt.Errorf("解析文件失败: %w", err)
 	}
 
 	p.pkgPath = "" // 使用当前文件所在目录
-	p.pkgName = pkg.Name
+	p.pkgName = file.Name.Name
 
 	// 查找目标函数
 	var targetFunc *ast.FuncDecl
 	if receiver != "" {
 		// 查找方法
-		targetFunc = p.findMethod(pkg, receiver, actualFuncName)
+		targetFunc = p.findMethodInFile(file, receiver, actualFuncName)
 	} else {
 		// 查找函数
-		targetFunc = p.findFunction(pkg, actualFuncName)
+		targetFunc = p.findFunctionInFile(file, actualFuncName)
 
 		// 如果找不到函数，尝试查找方法（可能有接收者但没有指定）
 		if targetFunc == nil {
-			receiver, targetFunc = p.findMethodAny(pkg, actualFuncName)
+			receiver, targetFunc = p.findMethodAnyInFile(file, actualFuncName)
 		}
 	}
 
@@ -103,54 +117,45 @@ func (p *Parser) contains(s, substr string) bool {
 	return strings.Contains(s, substr)
 }
 
-// parsePackage 解析包
-func (p *Parser) parsePackage(filePath string) (*ast.Package, error) {
-	dir := filepath.Dir(filePath)
-	pkgs, err := parser.ParseDir(p.fset, dir, nil, parser.AllErrors)
+// parseFile 解析单个文件
+func (p *Parser) parseFile(filePath string) (*ast.File, error) {
+	// 解析单个文件
+	file, err := parser.ParseFile(p.fset, filePath, nil, parser.AllErrors)
 	if err != nil {
 		return nil, err
 	}
 
-	// 返回第一个包（通常只有一个）
-	for _, pkg := range pkgs {
-		return pkg, nil
-	}
-
-	return nil, fmt.Errorf("未找到包定义")
+	return file, nil
 }
 
-// findFunction 查找函数（不包括方法）
-func (p *Parser) findFunction(pkg *ast.Package, funcName string) *ast.FuncDecl {
-	for _, file := range pkg.Files {
-		for _, decl := range file.Decls {
-			if fn, ok := decl.(*ast.FuncDecl); ok && fn.Name.Name == funcName {
-				// 只有当没有接收者时才是真正的函数
-				if fn.Recv == nil || len(fn.Recv.List) == 0 {
-					return fn
-				}
+// findFunctionInFile 在单个文件中查找函数（不包括方法）
+func (p *Parser) findFunctionInFile(file *ast.File, funcName string) *ast.FuncDecl {
+	for _, decl := range file.Decls {
+		if fn, ok := decl.(*ast.FuncDecl); ok && fn.Name.Name == funcName {
+			// 只有当没有接收者时才是真正的函数
+			if fn.Recv == nil || len(fn.Recv.List) == 0 {
+				return fn
 			}
 		}
 	}
 	return nil
 }
 
-// findMethod 查找方法
-func (p *Parser) findMethod(pkg *ast.Package, receiver, methodName string) *ast.FuncDecl {
-	for _, file := range pkg.Files {
-		for _, decl := range file.Decls {
-			if fn, ok := decl.(*ast.FuncDecl); ok && fn.Name.Name == methodName {
-				if fn.Recv != nil && len(fn.Recv.List) > 0 {
-					// 检查接收者类型
-					if recvType, ok := fn.Recv.List[0].Type.(*ast.Ident); ok {
-						if recvType.Name == receiver {
-							return fn
-						}
+// findMethodInFile 在单个文件中查找方法
+func (p *Parser) findMethodInFile(file *ast.File, receiver, methodName string) *ast.FuncDecl {
+	for _, decl := range file.Decls {
+		if fn, ok := decl.(*ast.FuncDecl); ok && fn.Name.Name == methodName {
+			if fn.Recv != nil && len(fn.Recv.List) > 0 {
+				// 检查接收者类型
+				if recvType, ok := fn.Recv.List[0].Type.(*ast.Ident); ok {
+					if recvType.Name == receiver {
+						return fn
 					}
-					// 处理指针接收者
-					if starExpr, ok := fn.Recv.List[0].Type.(*ast.StarExpr); ok {
-						if ident, ok := starExpr.X.(*ast.Ident); ok && ident.Name == receiver {
-							return fn
-						}
+				}
+				// 处理指针接收者
+				if starExpr, ok := fn.Recv.List[0].Type.(*ast.StarExpr); ok {
+					if ident, ok := starExpr.X.(*ast.Ident); ok && ident.Name == receiver {
+						return fn
 					}
 				}
 			}
@@ -159,21 +164,19 @@ func (p *Parser) findMethod(pkg *ast.Package, receiver, methodName string) *ast.
 	return nil
 }
 
-// findMethodAny 在任何类型中查找方法
-func (p *Parser) findMethodAny(pkg *ast.Package, methodName string) (string, *ast.FuncDecl) {
-	for _, file := range pkg.Files {
-		for _, decl := range file.Decls {
-			if fn, ok := decl.(*ast.FuncDecl); ok && fn.Name.Name == methodName {
-				if fn.Recv != nil && len(fn.Recv.List) > 0 {
-					// 提取接收者类型名
-					if recvType, ok := fn.Recv.List[0].Type.(*ast.Ident); ok {
-						return recvType.Name, fn
-					}
-					// 处理指针接收者
-					if starExpr, ok := fn.Recv.List[0].Type.(*ast.StarExpr); ok {
-						if ident, ok := starExpr.X.(*ast.Ident); ok {
-							return ident.Name, fn
-						}
+// findMethodAnyInFile 在单个文件中的任何类型中查找方法
+func (p *Parser) findMethodAnyInFile(file *ast.File, methodName string) (string, *ast.FuncDecl) {
+	for _, decl := range file.Decls {
+		if fn, ok := decl.(*ast.FuncDecl); ok && fn.Name.Name == methodName {
+			if fn.Recv != nil && len(fn.Recv.List) > 0 {
+				// 提取接收者类型名
+				if recvType, ok := fn.Recv.List[0].Type.(*ast.Ident); ok {
+					return recvType.Name, fn
+				}
+				// 处理指针接收者
+				if starExpr, ok := fn.Recv.List[0].Type.(*ast.StarExpr); ok {
+					if ident, ok := starExpr.X.(*ast.Ident); ok {
+						return ident.Name, fn
 					}
 				}
 			}
@@ -334,6 +337,32 @@ func (p *Parser) findTypeInPackage(pkgPath, typeName string) (*ast.TypeSpec, err
 	}
 
 	return nil, fmt.Errorf("未找到类型定义: %s", typeName)
+}
+
+// parseDirectory 解析目录中的所有 .go 文件
+func (p *Parser) parseDirectory(dirPath string) ([]*ast.File, error) {
+	var files []*ast.File
+
+	// 读取目录
+	entries, err := os.ReadDir(dirPath)
+	if err != nil {
+		return nil, err
+	}
+
+	// 解析每个 .go 文件
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".go") {
+			filePath := filepath.Join(dirPath, entry.Name())
+			file, err := parser.ParseFile(p.fset, filePath, nil, parser.AllErrors)
+			if err != nil {
+				// 如果单个文件解析失败，继续解析其他文件
+				continue
+			}
+			files = append(files, file)
+		}
+	}
+
+	return files, nil
 }
 
 // getFieldType 获取字段类型字符串

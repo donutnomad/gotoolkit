@@ -17,6 +17,7 @@ type AutoMap struct {
 	validator       *Validator
 	codeGenerator   *CodeGenerator
 	fset            *token.FileSet
+	currentFile     string
 }
 
 // New 创建新的AutoMap实例
@@ -40,7 +41,9 @@ func (am *AutoMap) Parse(funcName, callerFile string) (*ParseResult, error) {
 
 // ParseWithContext 使用指定文件上下文解析映射函数
 func (am *AutoMap) ParseWithContext(funcName, callerFile string) (*ParseResult, error) {
+	am.currentFile = callerFile
 	am.codeGenerator.typeResolver.currentFile = callerFile
+	am.parser.SetCurrentFile(callerFile)
 	// 解析函数签名
 	funcSignature, aType, bType, err := am.parser.ParseFunction(funcName)
 	if err != nil {
@@ -157,28 +160,67 @@ func (am *AutoMap) findFunctionDeclaration(funcName string) (*ast.FuncDecl, erro
 	// 解析函数名格式
 	receiver, actualFuncName := am.parseFunctionName(funcName)
 
-	// 直接使用当前目录
-	pkgs, err := parser.ParseDir(am.fset, ".", nil, parser.AllErrors)
+	// 使用当前文件路径
+	if am.currentFile == "" {
+		return nil, fmt.Errorf("未设置当前文件路径")
+	}
+
+	// 解析单个文件
+	file, err := parser.ParseFile(am.fset, am.currentFile, nil, parser.AllErrors)
 	if err != nil {
-		return nil, fmt.Errorf("解析包失败: %w", err)
+		return nil, fmt.Errorf("解析文件失败: %w", err)
 	}
 
 	// 查找函数
-	for _, pkg := range pkgs {
-		if receiver != "" {
-			// 查找方法
-			if fn := am.findMethodInPackage(pkg, receiver, actualFuncName); fn != nil {
-				return fn, nil
-			}
-		} else {
-			// 查找函数
-			if fn := am.findFunctionInPackage(pkg, actualFuncName); fn != nil {
-				return fn, nil
-			}
+	if receiver != "" {
+		// 查找方法
+		if fn := am.findMethodInFile(file, receiver, actualFuncName); fn != nil {
+			return fn, nil
+		}
+	} else {
+		// 查找函数
+		if fn := am.findFunctionInFile(file, actualFuncName); fn != nil {
+			return fn, nil
 		}
 	}
 
 	return nil, fmt.Errorf("未找到函数: %s", funcName)
+}
+
+// findFunctionInFile 在单个文件中查找函数（不包括方法）
+func (am *AutoMap) findFunctionInFile(file *ast.File, funcName string) *ast.FuncDecl {
+	for _, decl := range file.Decls {
+		if fn, ok := decl.(*ast.FuncDecl); ok && fn.Name.Name == funcName {
+			// 只有当没有接收者时才是真正的函数
+			if fn.Recv == nil || len(fn.Recv.List) == 0 {
+				return fn
+			}
+		}
+	}
+	return nil
+}
+
+// findMethodInFile 在单个文件中查找方法
+func (am *AutoMap) findMethodInFile(file *ast.File, receiver, methodName string) *ast.FuncDecl {
+	for _, decl := range file.Decls {
+		if fn, ok := decl.(*ast.FuncDecl); ok && fn.Name.Name == methodName {
+			if fn.Recv != nil && len(fn.Recv.List) > 0 {
+				// 检查接收者类型
+				if recvType, ok := fn.Recv.List[0].Type.(*ast.Ident); ok {
+					if recvType.Name == receiver {
+						return fn
+					}
+				}
+				// 处理指针接收者
+				if starExpr, ok := fn.Recv.List[0].Type.(*ast.StarExpr); ok {
+					if ident, ok := starExpr.X.(*ast.Ident); ok && ident.Name == receiver {
+						return fn
+					}
+				}
+			}
+		}
+	}
+	return nil
 }
 
 // parseFunctionName 解析函数名格式

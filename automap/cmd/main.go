@@ -10,17 +10,14 @@ import (
 )
 
 func main() {
-	//if len(os.Args) < 3 {
-	//	fmt.Println("用法: automap-cli <文件路径> <函数名>")
-	//	fmt.Println("示例: automap-cli ./mod.go MapAToB")
-	//	fmt.Println("      automap-cli /path/to/your/file.go YourFunction")
-	//	os.Exit(1)
-	//}
-	filePath := "/Users/ubuntu/Projects/go/work/taas-backend/internal/app/launchpad/infra/persistence/listingrepo/mapper.go"
-	funcName := "ListingPO.ToPO"
-
-	//filePath := os.Args[1]
-	//funcName := os.Args[2]
+	if len(os.Args) < 3 {
+		fmt.Println("用法: automap-cli <文件路径> <函数名>")
+		fmt.Println("示例: automap-cli ./mod.go MapAToB")
+		fmt.Println("      automap-cli /path/to/your/file.go YourFunction")
+		os.Exit(1)
+	}
+	filePath := os.Args[1]
+	funcName := os.Args[2]
 
 	// 检查文件是否存在
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
@@ -31,12 +28,6 @@ func main() {
 	absPath, err := filepath.Abs(filePath)
 	if err != nil {
 		log.Fatalf("获取绝对路径失败: %v", err)
-	}
-
-	// 改变工作目录到文件所在目录
-	fileDir := filepath.Dir(absPath)
-	if err := os.Chdir(fileDir); err != nil {
-		log.Fatalf("切换目录失败: %v", err)
 	}
 
 	fmt.Printf("解析文件: %s\n", absPath)
