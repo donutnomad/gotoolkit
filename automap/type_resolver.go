@@ -357,25 +357,76 @@ func (tr *TypeResolver) getSpecialPackageMapping(packageName, currentFile string
 
 	projectRoot := filepath.Dir(goModPath)
 
-	// 常见的包名映射规则
-	switch packageName {
-	case "domain":
-		// 尝试在常见的目录中查找domain相关的包
-		possiblePaths := []string{
-			filepath.Join(projectRoot, "internal", "app", "launchpad", "biz", "listing"),
-			filepath.Join(projectRoot, "internal", "domain"),
-			filepath.Join(projectRoot, "domain"),
-			filepath.Join(projectRoot, "pkg", "domain"),
-		}
+	// 动态查找包路径，不使用硬编码路径
+	if path := tr.findPackagePathDynamically(packageName, projectRoot); path != "" {
+		return path, true
+	}
+	return "", false
+}
 
-		for _, path := range possiblePaths {
-			if _, err := os.Stat(path); err == nil {
-				return path, true
+// findPackagePathDynamically 动态查找包路径
+func (tr *TypeResolver) findPackagePathDynamically(packageName, projectRoot string) string {
+	// 递归查找包含指定包名的目录
+	return tr.searchPackageInDirectory(packageName, projectRoot, make(map[string]bool))
+}
+
+// searchPackageInDirectory 在目录中递归搜索包
+func (tr *TypeResolver) searchPackageInDirectory(packageName, rootDir string, visited map[string]bool) string {
+	// 避免重复访问同一个目录
+	if visited[rootDir] {
+		return ""
+	}
+	visited[rootDir] = true
+
+	// 检查当前目录是否包含目标包
+	if pkgPath := tr.checkDirectoryForPackage(rootDir, packageName); pkgPath != "" {
+		return pkgPath
+	}
+
+	// 递归搜索子目录
+	entries, err := os.ReadDir(rootDir)
+	if err != nil {
+		return ""
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			dirPath := filepath.Join(rootDir, entry.Name())
+			// 跳过一些常见的非代码目录
+			if tr.shouldSkipDirectory(entry.Name()) {
+				continue
+			}
+			if result := tr.searchPackageInDirectory(packageName, dirPath, visited); result != "" {
+				return result
 			}
 		}
 	}
 
-	return "", false
+	return ""
+}
+
+// checkDirectoryForPackage 检查目录是否包含指定包
+func (tr *TypeResolver) checkDirectoryForPackage(dir, packageName string) string {
+	// 检查目录中的Go文件包声明
+	if pkgName := tr.findPackageNameInDir(dir, packageName); pkgName != "" {
+		return dir
+	}
+	return ""
+}
+
+// shouldSkipDirectory 判断是否应该跳过目录
+func (tr *TypeResolver) shouldSkipDirectory(dirName string) bool {
+	skipDirs := map[string]bool{
+		"vendor":       true,
+		".git":         true,
+		"node_modules": true,
+		".vscode":      true,
+		".idea":        true,
+		"bin":          true,
+		"dist":         true,
+		"build":        true,
+	}
+	return skipDirs[dirName]
 }
 
 // isStandardLibrary 检查是否为标准库
@@ -652,8 +703,8 @@ func (tr *TypeResolver) parseJSONFields(expr ast.Expr) []JSONFieldInfo {
 
 // parseStructFieldsFromType 从类型字符串解析结构体字段
 func (tr *TypeResolver) parseStructFieldsFromType(typeStr string) []JSONFieldInfo {
-	// 构建缓存键，包含可能的包前缀
-	cacheKeys := []string{typeStr, "domain." + typeStr, "automap." + typeStr}
+	// 生成可能的缓存键，基于已知的import映射
+	cacheKeys := tr.generateCacheKeys(typeStr)
 
 	// 首先尝试从当前已解析的类型中查找
 	for _, cacheKey := range cacheKeys {
@@ -662,16 +713,16 @@ func (tr *TypeResolver) parseStructFieldsFromType(typeStr string) []JSONFieldInf
 		}
 	}
 
-	// 如果缓存中没有，尝试从常见的包路径中解析
+	// 如果缓存中没有，创建类型信息并尝试解析
 	typeInfo := &TypeInfo{
 		Name:     typeStr,
 		FullName: typeStr,
 	}
 
-	// 尝试从domain包解析
-	if err := tr.resolveTypeFromDomain(typeInfo); err == nil {
-		// 缓存解析结果
-		cacheKey := "domain." + typeStr
+	// 尝试从当前文件的import映射中解析类型
+	if err := tr.resolveTypeFromImports(typeInfo); err == nil {
+		// 使用实际的包路径作为缓存键
+		cacheKey := tr.generateCacheKeyFromTypeInfo(typeInfo)
 		cachedCopy := *typeInfo
 		tr.cache[cacheKey] = &cachedCopy
 		return tr.convertFieldsToJSONFields(typeInfo.Fields)
@@ -679,13 +730,73 @@ func (tr *TypeResolver) parseStructFieldsFromType(typeStr string) []JSONFieldInf
 
 	// 尝试从当前包解析
 	if err := tr.resolveTypeFromCurrentPackage(typeInfo); err == nil {
-		// 缓存解析结果
-		cacheKey := "automap." + typeStr
+		// 使用实际的包路径作为缓存键
+		cacheKey := tr.generateCacheKeyFromTypeInfo(typeInfo)
 		cachedCopy := *typeInfo
 		tr.cache[cacheKey] = &cachedCopy
 		return tr.convertFieldsToJSONFields(typeInfo.Fields)
 	}
+
 	return []JSONFieldInfo{}
+}
+
+// generateCacheKeys 生成可能的缓存键
+func (tr *TypeResolver) generateCacheKeys(typeStr string) []string {
+	cacheKeys := []string{typeStr}
+
+	// 基于当前import映射生成缓存键
+	for pkgAlias, importPath := range tr.importMap {
+		cacheKey := pkgAlias + "." + typeStr
+		cacheKeys = append(cacheKeys, cacheKey)
+
+		// 如果import路径的最后一部分与类型名匹配，也添加为缓存键
+		parts := strings.Split(importPath, "/")
+		if len(parts) > 0 {
+			lastPart := parts[len(parts)-1]
+			if lastPart != pkgAlias {
+				cacheKey = lastPart + "." + typeStr
+				cacheKeys = append(cacheKeys, cacheKey)
+			}
+		}
+	}
+
+	return cacheKeys
+}
+
+// generateCacheKeyFromTypeInfo 从TypeInfo生成缓存键
+func (tr *TypeResolver) generateCacheKeyFromTypeInfo(typeInfo *TypeInfo) string {
+	if typeInfo.Package != "" {
+		return typeInfo.Package + "." + typeInfo.Name
+	}
+	return typeInfo.FullName
+}
+
+// resolveTypeFromImports 从import映射中解析类型
+func (tr *TypeResolver) resolveTypeFromImports(typeInfo *TypeInfo) error {
+	// 尝试从当前import映射中找到类型定义
+	for pkgAlias, importPath := range tr.importMap {
+		// 将import路径转换为文件系统路径
+		if tr.currentFile != "" {
+			if pkgPath, err := tr.importPathToFilePath(importPath, tr.currentFile); err == nil {
+				if typeSpec, filePath, err := tr.findTypeDefinition(pkgPath, typeInfo.Name); err == nil {
+					typeInfo.FilePath = filePath
+					typeInfo.Package = pkgAlias
+
+					// 解析结构体字段
+					if structType, ok := typeSpec.Type.(*ast.StructType); ok {
+						fields, err := tr.parseStructFields(structType)
+						if err != nil {
+							return err
+						}
+						typeInfo.Fields = fields
+					}
+					return nil
+				}
+			}
+		}
+	}
+
+	return fmt.Errorf("在import映射中未找到类型: %s", typeInfo.Name)
 }
 
 // isSimpleType 检查是否为简单类型（非结构体）
@@ -762,38 +873,97 @@ func (tr *TypeResolver) extractJSONTag(tagStr string) string {
 
 // resolveTypeFromDomain 从domain包解析类型
 func (tr *TypeResolver) resolveTypeFromDomain(typeInfo *TypeInfo) error {
-	// 尝试常见的domain包路径
+	// 动态查找domain包路径
 	goModPath, err := tr.findGoModFile(".")
 	if err != nil {
 		return fmt.Errorf("查找go.mod失败: %w", err)
 	}
 
 	projectRoot := filepath.Dir(goModPath)
-	possiblePaths := []string{
-		filepath.Join(projectRoot, "internal", "app", "launchpad", "biz", "listing"),
-		filepath.Join(projectRoot, "internal", "domain"),
-		filepath.Join(projectRoot, "domain"),
+
+	// 使用动态查找机制搜索包含domain类型定义的包
+	domainPath := tr.searchPackageInDirectory("", projectRoot, make(map[string]bool))
+	if domainPath == "" {
+		// 如果没有找到特定的domain包，尝试在整个项目中查找类型定义
+		return tr.resolveTypeInProject(typeInfo, projectRoot)
 	}
 
-	for _, pkgPath := range possiblePaths {
-		if _, err := os.Stat(pkgPath); err == nil {
-			typeSpec, filePath, err := tr.findTypeDefinition(pkgPath, typeInfo.Name)
-			if err == nil {
-				typeInfo.FilePath = filePath
-				// 解析结构体字段
-				if structType, ok := typeSpec.Type.(*ast.StructType); ok {
-					fields, err := tr.parseStructFields(structType)
-					if err != nil {
-						return err
-					}
-					typeInfo.Fields = fields
-				}
-				return nil
+	typeSpec, filePath, err := tr.findTypeDefinition(domainPath, typeInfo.Name)
+	if err != nil {
+		// 如果在domain包中没找到，尝试在整个项目中查找
+		return tr.resolveTypeInProject(typeInfo, projectRoot)
+	}
+
+	typeInfo.FilePath = filePath
+	// 解析结构体字段
+	if structType, ok := typeSpec.Type.(*ast.StructType); ok {
+		fields, err := tr.parseStructFields(structType)
+		if err != nil {
+			return err
+		}
+		typeInfo.Fields = fields
+	}
+
+	return nil
+}
+
+// resolveTypeInProject 在整个项目中查找类型定义
+func (tr *TypeResolver) resolveTypeInProject(typeInfo *TypeInfo, projectRoot string) error {
+	// 在整个项目中递归查找类型定义
+	typePath := tr.searchTypeInProject(typeInfo.Name, projectRoot, make(map[string]bool))
+	if typePath == "" {
+		return fmt.Errorf("在项目中未找到类型: %s", typeInfo.Name)
+	}
+
+	typeSpec, filePath, err := tr.findTypeDefinition(typePath, typeInfo.Name)
+	if err != nil {
+		return fmt.Errorf("查找类型定义失败: %w", err)
+	}
+
+	typeInfo.FilePath = filePath
+	// 解析结构体字段
+	if structType, ok := typeSpec.Type.(*ast.StructType); ok {
+		fields, err := tr.parseStructFields(structType)
+		if err != nil {
+			return err
+		}
+		typeInfo.Fields = fields
+	}
+
+	return nil
+}
+
+// searchTypeInProject 在项目中递归搜索类型定义
+func (tr *TypeResolver) searchTypeInProject(typeName, rootDir string, visited map[string]bool) string {
+	if visited[rootDir] {
+		return ""
+	}
+	visited[rootDir] = true
+
+	// 检查当前目录是否包含类型定义
+	if _, _, err := tr.findTypeDefinition(rootDir, typeName); err == nil {
+		return rootDir
+	}
+
+	// 递归搜索子目录
+	entries, err := os.ReadDir(rootDir)
+	if err != nil {
+		return ""
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			dirPath := filepath.Join(rootDir, entry.Name())
+			if tr.shouldSkipDirectory(entry.Name()) {
+				continue
+			}
+			if result := tr.searchTypeInProject(typeName, dirPath, visited); result != "" {
+				return result
 			}
 		}
 	}
 
-	return fmt.Errorf("在domain包中未找到类型: %s", typeInfo.Name)
+	return ""
 }
 
 // resolveTypeFromCurrentPackage 从当前包解析类型
