@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/davecgh/go-spew/spew"
 	"github.com/samber/lo"
 )
 
@@ -351,55 +352,6 @@ func (cg *CodeGenerator) getBFieldColumnKey(fieldName string) string {
 	return cg.toSnakeCase(fieldName)
 }
 
-// getEmbeddedFieldColumnKey 获取嵌入字段中子字段的GORM列名
-func (cg *CodeGenerator) getEmbeddedFieldColumnKey(embeddedType, subFieldName string) string {
-	// 先尝试一些常见的内置类型
-	if embeddedType == "Model" || embeddedType == "orm.Model" {
-		// 对于orm.Model，我们知道它的字段结构
-		switch subFieldName {
-		case "ID":
-			return "id"
-		case "CreatedAt":
-			return "created_at"
-		case "UpdatedAt":
-			return "updated_at"
-		case "DeletedAt":
-			return "deleted_at"
-		default:
-			return cg.toSnakeCase(subFieldName)
-		}
-	}
-
-	if cg.typeResolver == nil {
-		return cg.toSnakeCase(subFieldName)
-	}
-
-	// 尝试解析嵌入类型
-	embeddedTypeInfo := &TypeInfo{
-		Name: embeddedType,
-	}
-
-	// 使用当前目录解析嵌入类型
-	err := cg.typeResolver.ResolveType(embeddedTypeInfo, ".")
-	if err != nil {
-		// 解析失败，使用默认转换
-		return cg.toSnakeCase(subFieldName)
-	}
-
-	// 在嵌入类型的字段中查找子字段
-	for _, field := range embeddedTypeInfo.Fields {
-		if field.Name == subFieldName {
-			if field.ColumnName != "" {
-				return field.ColumnName
-			}
-			return cg.toSnakeCase(field.Name)
-		}
-	}
-
-	// 找不到字段，使用默认转换
-	return cg.toSnakeCase(subFieldName)
-}
-
 // toPascalCase 转换为PascalCase
 func (cg *CodeGenerator) toPascalCase(s string) string {
 	if s == "" {
@@ -414,24 +366,11 @@ func (cg *CodeGenerator) toSnakeCase(s string) string {
 	if s == "ID" {
 		return "id"
 	}
-
 	// 处理以ID结尾的情况，如UserID -> user_id
 	if strings.HasSuffix(s, "ID") && len(s) > 2 {
 		prefix := s[:len(s)-2]
 		return cg.toSnakeCase(prefix) + "_id"
 	}
-
-	// 处理其他常见缩写
-	commonAbbrevs := map[string]string{
-		"CreatedAt": "created_at",
-		"UpdatedAt": "updated_at",
-		"DeletedAt": "deleted_at",
-	}
-
-	if replacement, exists := commonAbbrevs[s]; exists {
-		return replacement
-	}
-
 	var result []rune
 	for i, r := range s {
 		if i > 0 && r >= 'A' && r <= 'Z' {
@@ -662,68 +601,32 @@ func (cg *CodeGenerator) getExpectedPatchFields() []string {
 	var fieldName []string
 	for _, item := range cg.result.BType.Fields {
 		if item.IsEmbedded {
-			//TODO:嵌入类型,之后处理
-			continue
+			// 处理嵌入字段（如 Model）
+			spew.Dump(item.Type)
+			embeddedFields := cg.getEmbeddedDatabaseFields(item.Type)
+			spew.Dump(embeddedFields)
+			fieldName = append(fieldName, embeddedFields...)
+		} else {
+			fieldName = append(fieldName, item.ColumnName)
 		}
-		fieldName = append(fieldName, item.ColumnName)
 	}
 	return lo.Uniq(fieldName)
-}
-
-// getBTypeDatabaseFields 获取B类型的所有数据库字段名
-func (cg *CodeGenerator) getBTypeDatabaseFields() []string {
-	var fields []string
-
-	// 遍历B类型的所有字段
-	for _, field := range cg.result.BType.Fields {
-		if field.IsEmbedded {
-			// 处理嵌入字段（如 Model）
-			embeddedFields := cg.getEmbeddedDatabaseFields(field.Type)
-			fields = append(fields, embeddedFields...)
-		} else if field.IsJSONType {
-			// JSON字段使用其列名
-			if field.ColumnName != "" {
-				fields = append(fields, field.ColumnName)
-			} else {
-				fields = append(fields, cg.toSnakeCase(field.Name))
-			}
-		} else {
-			// 普通字段使用其列名
-			if field.ColumnName != "" {
-				fields = append(fields, field.ColumnName)
-			} else {
-				fields = append(fields, cg.toSnakeCase(field.Name))
-			}
-		}
-	}
-
-	return fields
 }
 
 // getEmbeddedDatabaseFields 获取嵌入结构体的数据库字段名
 func (cg *CodeGenerator) getEmbeddedDatabaseFields(embeddedType string) []string {
 	var fields []string
-
-	// 处理常见的嵌入类型
-	if embeddedType == "Model" || embeddedType == "orm.Model" {
-		// orm.Model 的标准字段
-		fields = append(fields, "id", "created_at", "updated_at", "deleted_at")
-	} else {
-		// 对于其他嵌入类型，尝试解析
-		if cg.typeResolver != nil {
-			typeInfo := &TypeInfo{Name: embeddedType}
-			err := cg.typeResolver.ResolveType(typeInfo, ".")
-			if err == nil {
-				for _, field := range typeInfo.Fields {
-					if field.ColumnName != "" {
-						fields = append(fields, field.ColumnName)
-					} else {
-						fields = append(fields, cg.toSnakeCase(field.Name))
-					}
-				}
-			}
+	typeInfo := NewTypeInfoFromName(embeddedType)
+	err := cg.typeResolver.ResolveTypeCurrent(typeInfo)
+	if err != nil {
+		panic(fmt.Sprintf("cannot find typeInfo: %s", embeddedType))
+	}
+	for _, field := range typeInfo.Fields {
+		if field.ColumnName != "" {
+			fields = append(fields, field.ColumnName)
+		} else {
+			fields = append(fields, cg.toSnakeCase(field.Name))
 		}
 	}
-
 	return fields
 }

@@ -5,7 +5,6 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"os"
 	"runtime"
 	"strings"
 )
@@ -24,7 +23,6 @@ type AutoMap struct {
 func New() *AutoMap {
 	fset := token.NewFileSet()
 	typeResolver := NewTypeResolver()
-
 	return &AutoMap{
 		parser:          NewParser(),
 		typeResolver:    typeResolver,
@@ -36,14 +34,13 @@ func New() *AutoMap {
 }
 
 // Parse 解析映射函数并生成代码
-func (am *AutoMap) Parse(funcName string) (*ParseResult, error) {
-	// 获取调用者文件路径
-	callerFile := am.getCallerFile()
+func (am *AutoMap) Parse(funcName, callerFile string) (*ParseResult, error) {
 	return am.ParseWithContext(funcName, callerFile)
 }
 
 // ParseWithContext 使用指定文件上下文解析映射函数
 func (am *AutoMap) ParseWithContext(funcName, callerFile string) (*ParseResult, error) {
+	am.codeGenerator.typeResolver.currentFile = callerFile
 	// 解析函数签名
 	funcSignature, aType, bType, err := am.parser.ParseFunction(funcName)
 	if err != nil {
@@ -51,7 +48,7 @@ func (am *AutoMap) ParseWithContext(funcName, callerFile string) (*ParseResult, 
 	}
 
 	// 解析类型详细信息
-	if err := am.resolveTypes(aType, bType, callerFile); err != nil {
+	if err := am.resolveTypes(aType, bType); err != nil {
 		return nil, fmt.Errorf("解析类型详细信息失败: %w", err)
 	}
 
@@ -95,17 +92,14 @@ func (am *AutoMap) ParseWithContext(funcName, callerFile string) (*ParseResult, 
 }
 
 // resolveTypes 解析类型详细信息
-func (am *AutoMap) resolveTypes(aType, bType *TypeInfo, callerFile string) error {
-	// 使用实际的callerFile
-	currentFile := callerFile
-
+func (am *AutoMap) resolveTypes(aType, bType *TypeInfo) error {
 	// 解析A类型
-	if err := am.typeResolver.ResolveType(aType, currentFile); err != nil {
+	if err := am.typeResolver.ResolveTypeCurrent(aType); err != nil {
 		return fmt.Errorf("解析A类型失败: %w", err)
 	}
 
 	// 解析B类型
-	if err := am.typeResolver.ResolveType(bType, currentFile); err != nil {
+	if err := am.typeResolver.ResolveTypeCurrent(bType); err != nil {
 		return fmt.Errorf("解析B类型失败: %w", err)
 	}
 
@@ -246,6 +240,8 @@ func (am *AutoMap) getCallerFile() string {
 			continue
 		}
 
+		fmt.Println(fn.Name())
+
 		// 跳过automap包中的函数
 		if !am.contains(fn.Name(), "automap.") {
 			return file
@@ -257,15 +253,6 @@ func (am *AutoMap) getCallerFile() string {
 // contains 检查字符串是否包含子字符串
 func (am *AutoMap) contains(s, substr string) bool {
 	return strings.Contains(s, substr)
-}
-
-// isDir 检查路径是否为目录
-func isDir(path string) bool {
-	info, err := os.Stat(path)
-	if err != nil {
-		return false
-	}
-	return info.IsDir()
 }
 
 // ParseWithOptions 使用选项解析映射函数
@@ -295,25 +282,21 @@ func WithFileContext(filePath string) Option {
 	}
 }
 
-// WithValidator 设置验证器
-func WithValidator(validator *Validator) Option {
-	return func(am *AutoMap, current string) string {
-		am.validator = validator
-		return current
-	}
-}
-
-// WithCodeGenerator 设置代码生成器
-func WithCodeGenerator(generator *CodeGenerator) Option {
-	return func(am *AutoMap, current string) string {
-		am.codeGenerator = generator
-		return current
-	}
-}
-
 // ParseAndGenerate 解析并生成完整代码（包含导入）
-func (am *AutoMap) ParseAndGenerate(funcName string) (string, error) {
-	result, err := am.Parse(funcName)
+func (am *AutoMap) ParseAndGenerate(funcName string, options ...Option) (string, error) {
+	var callerFile string
+
+	// 应用选项
+	for _, option := range options {
+		callerFile = option(am, callerFile)
+	}
+
+	// 如果没有指定文件上下文，使用默认方式获取
+	if callerFile == "" {
+		callerFile = am.getCallerFile()
+	}
+
+	result, err := am.Parse(funcName, callerFile)
 	if err != nil {
 		return "", err
 	}
@@ -322,8 +305,8 @@ func (am *AutoMap) ParseAndGenerate(funcName string) (string, error) {
 }
 
 // ValidateFunction 验证函数是否符合要求
-func (am *AutoMap) ValidateFunction(funcName string) error {
-	result, err := am.Parse(funcName)
+func (am *AutoMap) ValidateFunction(funcName, callerFile string) error {
+	result, err := am.Parse(funcName, callerFile)
 	if err != nil {
 		return err
 	}
@@ -336,40 +319,8 @@ func (am *AutoMap) ValidateFunction(funcName string) error {
 	return nil
 }
 
-// GetFunctionSignature 获取函数签名信息
-func (am *AutoMap) GetFunctionSignature(funcName string) (*FuncSignature, error) {
-	sig, _, _, err := am.parser.ParseFunction(funcName)
-	return sig, err
-}
-
-// GetTypeInfo 获取类型信息
-func (am *AutoMap) GetTypeInfo(typeName string) (*TypeInfo, error) {
-	callerFile := am.getCallerFile()
-
-	typeInfo := &TypeInfo{
-		Name: typeName,
-	}
-
-	err := am.typeResolver.ResolveType(typeInfo, callerFile)
-	if err != nil {
-		return nil, err
-	}
-
-	return typeInfo, nil
-}
-
-// Debug 开启调试模式
-func (am *AutoMap) Debug() {
-	// TODO: 实现调试信息输出
-}
-
 // 全局实例
 var defaultAutoMap = New()
-
-// Parse 解析映射函数（使用默认实例）
-func Parse(funcName string) (*ParseResult, error) {
-	return defaultAutoMap.Parse(funcName)
-}
 
 // ParseWithOptions 使用选项解析映射函数（使用默认实例）
 func ParseWithOptions(funcName string, options ...Option) (*ParseResult, error) {
@@ -377,11 +328,6 @@ func ParseWithOptions(funcName string, options ...Option) (*ParseResult, error) 
 }
 
 // ParseAndGenerate 解析并生成完整代码（使用默认实例）
-func ParseAndGenerate(funcName string) (string, error) {
-	return defaultAutoMap.ParseAndGenerate(funcName)
-}
-
-// ValidateFunction 验证函数（使用默认实例）
-func ValidateFunction(funcName string) error {
-	return defaultAutoMap.ValidateFunction(funcName)
+func ParseAndGenerate(funcName string, options ...Option) (string, error) {
+	return defaultAutoMap.ParseAndGenerate(funcName, options...)
 }

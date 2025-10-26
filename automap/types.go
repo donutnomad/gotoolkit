@@ -3,6 +3,7 @@ package automap
 import (
 	"go/ast"
 	"go/token"
+	"strings"
 )
 
 // FuncSignature 函数签名信息
@@ -25,6 +26,22 @@ type TypeInfo struct {
 	Fields    []FieldInfo  // 字段列表
 	IsPointer bool         // 是否为指针类型
 	Methods   []MethodInfo // 方法列表
+}
+
+// NewTypeInfoFromName
+// name: xxx.XXX 或者XXX
+func NewTypeInfoFromName(fullName string) *TypeInfo {
+	typeInfo := &TypeInfo{
+		FullName: fullName,
+	}
+	parts := strings.Split(fullName, ".")
+	if len(parts) == 2 {
+		typeInfo.Name = parts[1]
+		typeInfo.Package = parts[0]
+	} else if len(parts) == 1 {
+		typeInfo.Name = parts[0]
+	}
+	return typeInfo
 }
 
 // FieldInfo 字段信息

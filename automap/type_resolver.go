@@ -12,10 +12,11 @@ import (
 
 // TypeResolver 类型解析器，支持跨包类型查找
 type TypeResolver struct {
-	fset      *token.FileSet
-	cache     map[string]*TypeInfo // 类型缓存
-	importMap map[string]string    // import映射
-	goMod     string               // go.mod文件路径
+	fset        *token.FileSet
+	cache       map[string]*TypeInfo // 类型缓存
+	importMap   map[string]string    // import映射
+	goMod       string               // go.mod文件路径
+	currentFile string
 }
 
 // NewTypeResolver 创建类型解析器
@@ -25,6 +26,10 @@ func NewTypeResolver() *TypeResolver {
 		cache:     make(map[string]*TypeInfo),
 		importMap: make(map[string]string),
 	}
+}
+
+func (tr *TypeResolver) ResolveTypeCurrent(typeInfo *TypeInfo) error {
+	return tr.ResolveType(typeInfo, tr.currentFile)
 }
 
 // ResolveType 解析类型详细信息
