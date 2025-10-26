@@ -39,7 +39,8 @@ func (cg *CodeGenerator) Generate(result *ParseResult) string {
 	cg.generateFunctionBody(&builder)
 
 	// 生成返回语句
-	cg.generateReturnStatement(&builder)
+	builder.WriteString("\treturn values\n")
+	builder.WriteString("}\n")
 
 	generatedCode := builder.String()
 
@@ -78,10 +79,10 @@ func (cg *CodeGenerator) generateFunctionBody(builder *strings.Builder) {
 	cg.generateMapperCall(builder)
 
 	// 生成获取patch的代码
-	cg.generatePatchCall(builder)
+	builder.WriteString("\tfields := input.ExportPatch()\n")
 
 	// 生成初始化返回值的代码
-	cg.generateResultInit(builder)
+	builder.WriteString(fmt.Sprintf("\tvalues := make(map[string]any, %d)\n", len(slices.Collect(cg.result.BType.FieldIter()))))
 
 	// 生成字段映射代码
 	cg.generateFieldMappings(builder)
@@ -97,16 +98,6 @@ func (cg *CodeGenerator) generateMapperCall(builder *strings.Builder) {
 	}
 
 	builder.WriteString(fmt.Sprintf("\tb := %s(input)\n", funcName))
-}
-
-// generatePatchCall 生成获取patch的代码
-func (cg *CodeGenerator) generatePatchCall(builder *strings.Builder) {
-	builder.WriteString("\tfields := input.ExportPatch()\n")
-}
-
-// generateResultInit 生成初始化返回值的代码
-func (cg *CodeGenerator) generateResultInit(builder *strings.Builder) {
-	builder.WriteString(fmt.Sprintf("\tvalues := make(map[string]any, %d)\n", len(slices.Collect(cg.result.BType.FieldIter()))))
 }
 
 func writeField(sb *strings.Builder, aField string, bFields []string, bField2Column map[string]*FieldInfo, comment string) {
@@ -171,19 +162,6 @@ OUT:
 		}
 	}
 
-	// A作为主导
-	//for aFieldName := range aFieldNames {
-	//	bField, ok := cg.result.FieldMapping.OneToOne[aFieldName]
-	//	if ok {
-	//		writeField(builder, aFieldName, []string{bField}, bField2Column, "")
-	//		continue
-	//	}
-	//	bFields, ok := cg.result.FieldMapping.OneToMany[aFieldName]
-	//	if ok {
-	//		writeField(builder, aFieldName, bFields, bField2Column, "// 1对多")
-	//	}
-	//}
-
 	var findAField = func(bFieldName string) string {
 		// 首先在一对一映射中查找
 		for aField, bField := range cg.result.FieldMapping.OneToOne {
@@ -223,8 +201,6 @@ OUT:
 			panic("cannot found b filed")
 		}
 		aGoField2BFieldPath := jsonMapping.SubFields
-		//fmt.Println("映射为:", bFieldName, bField.GetColumnName())
-		//fmt.Println("映射为:", bFieldName, bField.GetFullType())
 
 		fullType := bField.GetFullType()
 
@@ -268,7 +244,6 @@ OUT:
 			for _, k := range keys {
 				if k != normalKey {
 					builder.WriteString(fmt.Sprintf("// %s\n", k))
-					//builder.WriteString("\t{\n")
 				}
 				for _, tmp := range nestedMapping[k] {
 					writeField3(builder, tmp.aField,
@@ -276,9 +251,6 @@ OUT:
 						fmt.Sprintf("field.%s", tmp.bFieldPath),
 					)
 				}
-				//if k != normalKey {
-				//	builder.WriteString("\t}\n")
-				//}
 			}
 			builder.WriteString("\tif set.Len() > 0 {\n")
 			builder.WriteString(fmt.Sprintf("\tvalues[\"%s\"] = set\n", bColumnName))
@@ -330,33 +302,6 @@ func (cg *CodeGenerator) getJsonName(thisTypeInfo *TypeInfo, path string) (resul
 		result += jn.GetJsonName() + "."
 	}
 	return result
-}
-
-// generateReturnStatement 生成返回语句
-func (cg *CodeGenerator) generateReturnStatement(builder *strings.Builder) {
-	builder.WriteString("\treturn values\n")
-	builder.WriteString("}\n") // 函数结束括号
-}
-
-// toSnakeCase 转换为snake_case
-func (cg *CodeGenerator) toSnakeCase(s string) string {
-	// 处理常见缩写词和全大写的情况
-	if s == "ID" {
-		return "id"
-	}
-	// 处理以ID结尾的情况，如UserID -> user_id
-	if strings.HasSuffix(s, "ID") && len(s) > 2 {
-		prefix := s[:len(s)-2]
-		return cg.toSnakeCase(prefix) + "_id"
-	}
-	var result []rune
-	for i, r := range s {
-		if i > 0 && r >= 'A' && r <= 'Z' {
-			result = append(result, '_')
-		}
-		result = append(result, r)
-	}
-	return strings.ToLower(string(result))
 }
 
 // GenerateImports 生成需要的导入语句

@@ -5,9 +5,6 @@ import (
 	"go/ast"
 	"go/token"
 	"strings"
-	"unicode"
-
-	"github.com/davecgh/go-spew/spew"
 )
 
 // MappingAnalyzer 映射分析器
@@ -728,28 +725,6 @@ func (ma *MappingAnalyzer) analyzeNestedJSONFieldWithoutAField(parentField strin
 	}
 }
 
-// getJSONTagName 获取字段的JSON标签名
-func (ma *MappingAnalyzer) getJSONTagName(expr ast.Expr, fieldName string) string {
-	// 这里需要查找字段定义来获取JSON标签
-	// 由于我们处理的是B_Token结构体，需要在这个类型中查找字段定义
-
-	// 首先尝试通过类型解析获取JSON标签
-	if jsonTag := ma.getJSONTagFromType(expr); jsonTag != "" {
-		return jsonTag
-	}
-
-	// 如果找不到JSON标签，返回snake_case形式
-	return ma.toSnakeCase(fieldName)
-}
-
-// getJSONTagFromType 从类型定义中获取JSON标签
-func (ma *MappingAnalyzer) getJSONTagFromType(expr ast.Expr) string {
-	spew.Dump("getJSONTagFromType", expr)
-	fieldName := ma.extractFieldName(expr)
-	// 默认返回snake_case
-	return ma.toSnakeCase(fieldName)
-}
-
 // buildFieldMapping 构建字段映射
 func (ma *MappingAnalyzer) buildFieldMapping() {
 	// 清空之前的映射
@@ -815,16 +790,4 @@ func (ma *MappingAnalyzer) buildFieldMapping() {
 			ma.fieldMapping.OneToMany[aField] = finalBFields
 		}
 	}
-}
-
-// toSnakeCase 转换为snake_case
-func (ma *MappingAnalyzer) toSnakeCase(s string) string {
-	var result []rune
-	for i, r := range s {
-		if i > 0 && unicode.IsUpper(r) {
-			result = append(result, '_')
-		}
-		result = append(result, unicode.ToLower(r))
-	}
-	return string(result)
 }
