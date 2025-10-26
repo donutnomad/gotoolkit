@@ -184,7 +184,7 @@ func Scan(
 	return tx
 }
 
-func ScanRows(tx *gorm.DB, rows *sql.Rows, dest interface{}) error {
+func ScanRows(tx *gorm.DB, rows *sql.Rows, dest any) error {
 	if err := tx.Statement.Parse(dest); !errors.Is(err, schema.ErrUnsupportedDataType) {
 		tx.AddError(err)
 	}
@@ -203,31 +203,31 @@ func ScanRows(tx *gorm.DB, rows *sql.Rows, dest interface{}) error {
 }
 
 // prepareValues prepare values slice
-func prepareValues(values []interface{}, db *gorm.DB, columnTypes []*sql.ColumnType, columns []string) {
+func prepareValues(values []any, db *gorm.DB, columnTypes []*sql.ColumnType, columns []string) {
 	if db.Statement.Schema != nil {
 		for idx, name := range columns {
 			if field := db.Statement.Schema.LookUpField(name); field != nil {
 				values[idx] = reflect.New(reflect.PointerTo(field.FieldType)).Interface()
 				continue
 			}
-			values[idx] = new(interface{})
+			values[idx] = new(any)
 		}
 	} else if len(columnTypes) > 0 {
 		for idx, columnType := range columnTypes {
 			if columnType.ScanType() != nil {
 				values[idx] = reflect.New(reflect.PointerTo(columnType.ScanType())).Interface()
 			} else {
-				values[idx] = new(interface{})
+				values[idx] = new(any)
 			}
 		}
 	} else {
 		for idx := range columns {
-			values[idx] = new(interface{})
+			values[idx] = new(any)
 		}
 	}
 }
 
-func scanIntoMap(mapValue map[string]interface{}, values []interface{}, columns []string) {
+func scanIntoMap(mapValue map[string]any, values []any, columns []string) {
 	for idx, column := range columns {
 		if reflectValue := reflect.Indirect(reflect.Indirect(reflect.ValueOf(values[idx]))); reflectValue.IsValid() {
 			mapValue[column] = reflectValue.Interface()
@@ -248,7 +248,7 @@ var cacheStore = &sync.Map{}
 func Scan2(rows gorm.Rows, db *gorm.DB, mode gorm.ScanMode) {
 	var (
 		columns, _  = rows.Columns()
-		values      = make([]interface{}, len(columns))
+		values      = make([]any, len(columns))
 		initialized = mode&gorm.ScanInitialized != 0
 		//update      = mode&gorm.ScanUpdate != 0
 		//onConflictDonothing = mode&gorm.ScanOnConflictDoNothing != 0
@@ -266,7 +266,7 @@ func Scan2(rows gorm.Rows, db *gorm.DB, mode gorm.ScanMode) {
 	db.RowsAffected = 0
 
 	switch dest := db.Statement.Dest.(type) {
-	case map[string]interface{}, *map[string]interface{}:
+	case map[string]any, *map[string]any:
 		if initialized || rows.Next() {
 			columnTypes, _ := rows.ColumnTypes()
 			prepareValues(values, db, columnTypes, columns)
@@ -274,18 +274,18 @@ func Scan2(rows gorm.Rows, db *gorm.DB, mode gorm.ScanMode) {
 			db.RowsAffected++
 			db.AddError(rows.Scan(values...))
 
-			mapValue, ok := dest.(map[string]interface{})
+			mapValue, ok := dest.(map[string]any)
 			if !ok {
-				if v, ok := dest.(*map[string]interface{}); ok {
+				if v, ok := dest.(*map[string]any); ok {
 					if *v == nil {
-						*v = map[string]interface{}{}
+						*v = map[string]any{}
 					}
 					mapValue = *v
 				}
 			}
 			scanIntoMap(mapValue, values, columns)
 		}
-	case *[]map[string]interface{}:
+	case *[]map[string]any:
 		columnTypes, _ := rows.ColumnTypes()
 		for initialized || rows.Next() {
 			prepareValues(values, db, columnTypes, columns)
@@ -294,7 +294,7 @@ func Scan2(rows gorm.Rows, db *gorm.DB, mode gorm.ScanMode) {
 			db.RowsAffected++
 			db.AddError(rows.Scan(values...))
 
-			mapValue := map[string]interface{}{}
+			mapValue := map[string]any{}
 			scanIntoMap(mapValue, values, columns)
 			*dest = append(*dest, mapValue)
 		}
@@ -447,10 +447,10 @@ func Scan2(rows gorm.Rows, db *gorm.DB, mode gorm.ScanMode) {
 										continue
 									}
 								}
-								var val interface{}
+								var val any
 								values[idx] = &val
 							} else {
-								var val interface{}
+								var val any
 								values[idx] = &val
 							}
 						}
@@ -543,7 +543,7 @@ func Scan2(rows gorm.Rows, db *gorm.DB, mode gorm.ScanMode) {
 	}
 }
 
-func scanIntoStruct2(db *gorm.DB, rows gorm.Rows, reflectValue reflect.Value, values []interface{}, fields []*schema.Field, joinFields [][]*schema.Field, embeddedFields [][]*schema.Field) {
+func scanIntoStruct2(db *gorm.DB, rows gorm.Rows, reflectValue reflect.Value, values []any, fields []*schema.Field, joinFields [][]*schema.Field, embeddedFields [][]*schema.Field) {
 	for idx, field := range fields {
 		if field != nil {
 			values[idx] = field.NewValuePool.Get()
@@ -558,7 +558,7 @@ func scanIntoStruct2(db *gorm.DB, rows gorm.Rows, reflectValue reflect.Value, va
 
 	db.RowsAffected++
 	db.AddError(rows.Scan(values...))
-	joinedNestedSchemaMap := make(map[string]interface{})
+	joinedNestedSchemaMap := make(map[string]any)
 	embeddedInitialized := make(map[string]bool) // 记录哪些嵌入字段已经初始化
 
 	for idx, field := range fields {

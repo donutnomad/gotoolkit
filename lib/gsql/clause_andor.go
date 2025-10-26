@@ -35,9 +35,6 @@ func Or(exprs ...field.Expression) field.Expression {
 	if len(exprs) == 0 {
 		return empty
 	}
-	if len(exprs) == 0 {
-		return nil
-	}
 	var or clause.OrConditions
 	for _, expr := range exprs {
 		if v, ok := expr.(clause.OrConditions); ok {

@@ -5,11 +5,11 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/swaggo/swag"
+	"github.com/donutnomad/gotoolkit/internal/utils"
 )
 
 func Format(path string) error {
-	formatter := swag.NewFormatter()
+	formatter := utils.NewSwagFormatter()
 	original, err := os.ReadFile(path)
 	if err != nil {
 		return err

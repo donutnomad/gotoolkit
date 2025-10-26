@@ -308,7 +308,7 @@ func (b *QueryBuilderG[T]) Scope(fns ...ScopeFunc) *QueryBuilderG[T] {
 	for _, fn := range fns {
 		fn(clone)
 	}
-	toG(b, clone)
+	setTo(b, clone)
 	return b
 }
 
@@ -359,10 +359,8 @@ func (b *QueryBuilderG[T]) Update(db IDB, values any) DBResult {
 	}
 }
 
-func (b *QueryBuilderG[T]) UpdateG(db IDB, value interface {
-	Build() map[string]any
-}) DBResult {
-	return b.Update(db, value.Build())
+func (b *QueryBuilderG[T]) UpdateColumns(db IDB, value map[string]any) DBResult {
+	return b.Update(db, value)
 }
 
 func (b *QueryBuilderG[T]) Delete(db IDB) DBResult {
@@ -588,7 +586,7 @@ func asAny[OUT any, IN any](in *QueryBuilderG[IN]) *QueryBuilderG[OUT] {
 	}
 }
 
-func toG[T any, T2 any](dst *QueryBuilderG[T], src *QueryBuilderG[T2]) {
+func setTo[DST any, IN any](dst *QueryBuilderG[DST], src *QueryBuilderG[IN]) {
 	dst.selects = src.selects
 	dst.from = src.from
 	dst.joins = src.joins

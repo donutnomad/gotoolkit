@@ -34,9 +34,9 @@ func (e jsonTableColumn) Build(builder clause.Builder) {
 
 	var write = func(s string) {
 		builder.WriteString(" ")
-		if *e.onEmpty == "ERROR" {
+		if s == "ERROR" {
 			builder.WriteString("ERROR")
-		} else if *e.onEmpty == "NULL" {
+		} else if s == "NULL" {
 			builder.WriteString("NULL")
 		} else {
 			builder.WriteString("DEFAULT ")

@@ -256,10 +256,8 @@ func (b *QueryBuilder) Update(db IDB, value any) DBResult {
 	return b.as().Update(db, value)
 }
 
-func (b *QueryBuilder) UpdateG(db IDB, value interface {
-	Build() map[string]any
-}) DBResult {
-	return b.Update(db, value.Build())
+func (b *QueryBuilder) UpdateColumns(db IDB, value map[string]any) DBResult {
+	return b.Update(db, value)
 }
 
 func (b *QueryBuilder) Delete(db IDB, dest any) DBResult {
