@@ -283,7 +283,7 @@ OUT:
 			builder.WriteString("\tif set.Len() > 0 {\n")
 			builder.WriteString(fmt.Sprintf("\tvalues[\"%s\"] = set\n", bColumnName))
 			builder.WriteString("\t}\n")
-			builder.WriteString("\t}")
+			builder.WriteString("\t}\n")
 		}
 	}
 }
