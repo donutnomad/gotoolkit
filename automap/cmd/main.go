@@ -52,7 +52,7 @@ func main() {
 
 	//// 生成完整代码
 	fmt.Printf("=== 生成的代码 ===\n")
-	code, err := automap.ParseAndGenerate(funcName, automap.WithFileContext(absPath))
+	code, err := automap.ParseAndGenerate(funcName, "ToPatch", automap.WithFileContext(absPath))
 	if err != nil {
 		log.Fatalf("生成代码失败: %v", err)
 	}

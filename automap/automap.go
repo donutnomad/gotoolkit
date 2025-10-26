@@ -384,6 +384,7 @@ func ParseWithOptions(funcName string, options ...Option) (*ParseResult, error) 
 }
 
 // ParseAndGenerate 解析并生成完整代码（使用默认实例）
-func ParseAndGenerate(funcName string, options ...Option) (string, error) {
+func ParseAndGenerate(funcName string, genFuncName string, options ...Option) (string, error) {
+	defaultAutoMap.codeGenerator.genFuncName = genFuncName
 	return defaultAutoMap.ParseAndGenerate(funcName, options...)
 }

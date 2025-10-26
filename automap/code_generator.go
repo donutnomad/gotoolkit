@@ -16,6 +16,7 @@ import (
 type CodeGenerator struct {
 	result       *ParseResult
 	typeResolver *TypeResolver
+	genFuncName  string
 }
 
 // NewCodeGenerator 创建代码生成器
@@ -32,7 +33,7 @@ func (cg *CodeGenerator) Generate(result *ParseResult) string {
 	var builder strings.Builder
 
 	// 生成函数签名
-	cg.generateFunctionSignature(&builder)
+	cg.generateFunctionSignature(cg.genFuncName, &builder)
 
 	// 生成函数体
 	cg.generateFunctionBody(&builder)
@@ -53,7 +54,7 @@ func (cg *CodeGenerator) Generate(result *ParseResult) string {
 }
 
 // generateFunctionSignature 生成函数签名
-func (cg *CodeGenerator) generateFunctionSignature(builder *strings.Builder) {
+func (cg *CodeGenerator) generateFunctionSignature(genFuncName string, builder *strings.Builder) {
 	aTypeName := cg.result.AType.Name
 	if cg.result.AType.Package != "" && cg.result.AType.Package != cg.result.FuncSignature.PackageName {
 		aTypeName = cg.result.AType.Package + "." + aTypeName
@@ -63,11 +64,11 @@ func (cg *CodeGenerator) generateFunctionSignature(builder *strings.Builder) {
 	if cg.result.FuncSignature.Receiver != "" {
 		// 生成带接收者的函数签名
 		receiverVar := strings.ToLower(cg.result.FuncSignature.Receiver[:1])
-		builder.WriteString(fmt.Sprintf("func (%s *%s) Do(input *%s) map[string]any {\n",
-			receiverVar, cg.result.FuncSignature.Receiver, aTypeName))
+		builder.WriteString(fmt.Sprintf("func (%s *%s) %s(input *%s) map[string]any {\n",
+			receiverVar, cg.result.FuncSignature.Receiver, genFuncName, aTypeName))
 	} else {
 		// 生成普通函数签名
-		builder.WriteString(fmt.Sprintf("func Do(input *%s) map[string]any {\n", aTypeName))
+		builder.WriteString(fmt.Sprintf("func %s(input *%s) map[string]any {\n", genFuncName, aTypeName))
 	}
 }
 

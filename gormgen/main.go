@@ -20,7 +20,12 @@ func main() {
 	var patch = flag.Bool("patch", false, "生成GORM Patch结构体和Build方法")
 	var one = flag.Bool("one", false, "将query和patch代码生成到同一个文件中")
 	var outputFile = flag.String("o", "", "指定输出文件名,所有内容输出到此文件(不按文件分组)")
+	var patch2 = flag.Bool("patch2", false, "生成GORM Patch2")
 	flag.Parse()
+
+	var isPatch = func() bool {
+		return *patch || *patch2
+	}
 
 	if *structNames == "" {
 		log.Fatal("[gormgen] 请指定结构体名称,使用 -struct 参数")
@@ -118,33 +123,7 @@ func main() {
 		for _, targetFile := range fileOrderList {
 			allModels = append(allModels, fileModelsMap[targetFile]...)
 		}
-
-		// 所有内容输出到指定文件
-		if *one && *patch {
-			// query和patch合并到一个文件
-			err := generateGormQueryAndPatchFile(*outputFile, allModels)
-			if err != nil {
-				log.Fatalf("[gormgen] 生成合并文件失败: %v", err)
-			}
-			fmt.Printf("[gormgen] 成功生成 %s (包含 %d 个结构体, query+patch)\n", *outputFile, len(allModels))
-		} else {
-			// 只生成query
-			err := generateGormQueryFileForMultiple(*outputFile, allModels)
-			if err != nil {
-				log.Fatalf("[gormgen] 生成查询文件失败: %v", err)
-			}
-			fmt.Printf("[gormgen] 成功生成 %s (包含 %d 个结构体)\n", *outputFile, len(allModels))
-
-			// 如果需要patch，生成到单独文件
-			if *patch {
-				patchFile := (*outputFile)[:len(*outputFile)-3] + "_patch.go"
-				err := generateGormPatchFileForMultiple(patchFile, allModels)
-				if err != nil {
-					log.Fatalf("[gormgen] 生成GORM patch文件失败: %v", err)
-				}
-				fmt.Printf("[gormgen] 成功生成 %s (包含 %d 个结构体)\n", patchFile, len(allModels))
-			}
-		}
+		do(one, isPatch, *outputFile, allModels, 3)
 	} else {
 		// 按文件分组生成
 		for _, targetFile := range fileOrderList {
@@ -161,32 +140,36 @@ func main() {
 				queryFile = strings.TrimSuffix(targetFile, ".go") + "_query.go"
 			}
 
-			// 检查是否合并到一个文件
-			if *one && *patch {
-				// query和patch合并到一个文件
-				err := generateGormQueryAndPatchFile(queryFile, models)
-				if err != nil {
-					log.Fatalf("[gormgen] 生成合并文件失败: %v", err)
-				}
-				fmt.Printf("[gormgen] 成功生成 %s (包含 %d 个结构体, query+patch)\n", queryFile, len(models))
-			} else {
-				// 生成query文件
-				err := generateGormQueryFileForMultiple(queryFile, models)
-				if err != nil {
-					log.Fatalf("[gormgen] 生成查询文件失败: %v", err)
-				}
-				fmt.Printf("[gormgen] 成功生成 %s (包含 %d 个结构体)\n", queryFile, len(models))
+			do(one, isPatch, queryFile, models, 9)
+		}
+	}
+}
 
-				// 生成patch文件
-				if *patch {
-					patchFile := queryFile[:len(queryFile)-9] + "_patch.go"
-					err := generateGormPatchFileForMultiple(patchFile, models)
-					if err != nil {
-						log.Fatalf("[gormgen] 生成GORM patch文件失败: %v", err)
-					}
-					fmt.Printf("[gormgen] 成功生成 %s (包含 %d 个结构体)\n", patchFile, len(models))
-				}
+func do(one *bool, isPatch func() bool, queryFile string, models []*gormparse.GormModelInfo, end int) {
+	// 检查是否合并到一个文件
+	if *one && isPatch() {
+		// query和patch合并到一个文件
+		err := genQueryAndPatch(queryFile, models)
+		if err != nil {
+			log.Fatalf("[gormgen] 生成合并文件失败: %v", err)
+		}
+		fmt.Printf("[gormgen] 成功生成 %s (包含 %d 个结构体, query+patch)\n", queryFile, len(models))
+	} else {
+		// 生成query文件
+		err := GenQuery(queryFile, models)
+		if err != nil {
+			log.Fatalf("[gormgen] 生成查询文件失败: %v", err)
+		}
+		fmt.Printf("[gormgen] 成功生成 %s (包含 %d 个结构体)\n", queryFile, len(models))
+
+		// 生成patch文件
+		if isPatch() {
+			patchFile := queryFile[:len(queryFile)-end] + "_patch.go"
+			err := GenPatch(patchFile, models)
+			if err != nil {
+				log.Fatalf("[gormgen] 生成GORM patch文件失败: %v", err)
 			}
+			fmt.Printf("[gormgen] 成功生成 %s (包含 %d 个结构体)\n", patchFile, len(models))
 		}
 	}
 }
