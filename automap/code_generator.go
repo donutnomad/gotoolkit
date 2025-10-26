@@ -41,7 +41,7 @@ func (cg *CodeGenerator) Generate(result *ParseResult) string {
 	// 验证字段覆盖情况
 	if err := cg.validateFieldCoverage(generatedCode); err != nil {
 		// 在生成的代码前添加错误注释
-		errorMsg := fmt.Sprintf("// 错误: %s\n\n", err.Error())
+		errorMsg := fmt.Sprintf("// %s\n", err.Error())
 		return errorMsg + generatedCode
 	}
 
@@ -261,6 +261,7 @@ func (cg *CodeGenerator) generateJSONFieldMappings(builder *strings.Builder) {
 				}
 
 				// 分析嵌套字段结构
+				spew.Dump("彩虹", jsonMapping.SubFields)
 				nestedFields := cg.analyzeNestedFields(jsonMapping.SubFields)
 
 				// 生成简单字段的映射
@@ -590,7 +591,7 @@ func (cg *CodeGenerator) validateFieldCoverage(generatedCode string) error {
 	}
 
 	if len(missingFields) > 0 {
-		return fmt.Errorf("以下B类型字段没有被赋值: %v", missingFields)
+		return fmt.Errorf("Missing fields: %v", strings.Join(missingFields, ", "))
 	}
 
 	return nil
@@ -602,9 +603,7 @@ func (cg *CodeGenerator) getExpectedPatchFields() []string {
 	for _, item := range cg.result.BType.Fields {
 		if item.IsEmbedded {
 			// 处理嵌入字段（如 Model）
-			spew.Dump(item.Type)
 			embeddedFields := cg.getEmbeddedDatabaseFields(item.Type)
-			spew.Dump(embeddedFields)
 			fieldName = append(fieldName, embeddedFields...)
 		} else {
 			fieldName = append(fieldName, item.ColumnName)

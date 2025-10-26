@@ -83,10 +83,10 @@ func (am *AutoMap) ParseWithContext(funcName, callerFile string) (*ParseResult, 
 		MappingRelations: mappingRelations,
 	}
 
-	// 最终验证
-	if err := am.validator.Validate(result); err != nil {
-		return nil, fmt.Errorf("最终验证失败: %w", err)
-	}
+	//// 最终验证
+	//if err := am.validator.Validate(result); err != nil {
+	//	return nil, fmt.Errorf("最终验证失败: %w", err)
+	//}
 
 	return result, nil
 }

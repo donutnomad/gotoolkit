@@ -4,6 +4,7 @@ import (
 	"go/ast"
 	"go/token"
 	"strings"
+	"unicode"
 )
 
 // FuncSignature 函数签名信息
@@ -49,6 +50,7 @@ type FieldInfo struct {
 	Name       string          // 字段名
 	Type       string          // 字段类型
 	GormTag    string          // GORM标签
+	JsonTag    string          // GORM标签
 	ColumnName string          // 数据库列名
 	IsJSONType bool            // 是否为JSONType
 	JSONFields []JSONFieldInfo // JSON字段信息
@@ -56,6 +58,20 @@ type FieldInfo struct {
 	IsEmbedded bool            // 是否为嵌入字段
 	ASTField   *ast.Field      // AST字段节点
 	StructType *ast.StructType // 字段是所属的结构体
+}
+
+func (f *FieldInfo) GetColumnName() string {
+	if f.ColumnName == "" {
+		var result []rune
+		for i, r := range f.Name {
+			if i > 0 && unicode.IsUpper(r) {
+				result = append(result, '_')
+			}
+			result = append(result, unicode.ToLower(r))
+		}
+		return string(result)
+	}
+	return f.ColumnName
 }
 
 // JSONFieldInfo JSON字段信息
@@ -95,7 +111,7 @@ type FieldMapping struct {
 
 // JSONMapping JSON字段映射
 type JSONMapping struct {
-	FieldName string            // JSON字段名
+	FieldName string            // 数据库的字段名
 	SubFields map[string]string // A字段 -> JSON子字段
 }
 

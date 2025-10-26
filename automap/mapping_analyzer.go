@@ -6,6 +6,8 @@ import (
 	"go/token"
 	"strings"
 	"unicode"
+
+	"github.com/davecgh/go-spew/spew"
 )
 
 // MappingAnalyzer 映射分析器
@@ -480,12 +482,9 @@ func (ma *MappingAnalyzer) processJSONFieldMapping(callExpr *ast.CallExpr, compL
 	if targetBField != nil && targetBField.IsJSONType {
 		// 为这个特定的JSON字段创建映射
 		jsonMapping := JSONMapping{
-			FieldName: targetBField.ColumnName,
+			FieldName: targetBField.GetColumnName(), // 数据库的字段名
+			SubFields: make(map[string]string),
 		}
-		if jsonMapping.FieldName == "" {
-			jsonMapping.FieldName = ma.toSnakeCase(targetBField.Name)
-		}
-		jsonMapping.SubFields = make(map[string]string)
 
 		// 分析具体的JSON字段映射
 		ma.analyzeJSONSubFields(compLit, &jsonMapping)
@@ -602,8 +601,8 @@ func (ma *MappingAnalyzer) processDefaultJSONMapping(compLit *ast.CompositeLit, 
 func (ma *MappingAnalyzer) analyzeJSONSubFields(compLit *ast.CompositeLit, jsonMapping *JSONMapping) {
 	for _, elt := range compLit.Elts {
 		if kv, ok := elt.(*ast.KeyValueExpr); ok {
-			jsonFieldName := ma.extractFieldName(kv.Key)
-			aFields := ma.extractAFieldsFromExpr(kv.Value)
+			jsonFieldName := ma.extractFieldName(kv.Key)   // go的字段名，po对象
+			aFields := ma.extractAFieldsFromExpr(kv.Value) // 右边，a对象
 
 			if len(aFields) > 0 && jsonFieldName != "" {
 				// 检查值是否为嵌套的复合字面量
@@ -614,6 +613,7 @@ func (ma *MappingAnalyzer) analyzeJSONSubFields(compLit *ast.CompositeLit, jsonM
 					// 这是简单字段
 					// 尝试获取JSON标签名，如果没有则使用字段名的snake_case
 					jsonTagName := ma.getJSONTagName(kv.Key, jsonFieldName)
+
 					// 映射A字段到JSON子字段
 					jsonMapping.SubFields[aFields[0]] = jsonTagName
 				}
@@ -679,6 +679,7 @@ func (ma *MappingAnalyzer) getJSONTagName(expr ast.Expr, fieldName string) strin
 
 // getJSONTagFromType 从类型定义中获取JSON标签
 func (ma *MappingAnalyzer) getJSONTagFromType(expr ast.Expr) string {
+	spew.Dump("getJSONTagFromType", expr)
 	fieldName := ma.extractFieldName(expr)
 	// 默认返回snake_case
 	return ma.toSnakeCase(fieldName)
@@ -687,9 +688,9 @@ func (ma *MappingAnalyzer) getJSONTagFromType(expr ast.Expr) string {
 // buildFieldMapping 构建字段映射
 func (ma *MappingAnalyzer) buildFieldMapping() {
 	// 清空之前的映射
-	ma.fieldMapping.OneToOne = make(map[string]string)
-	ma.fieldMapping.OneToMany = make(map[string][]string)
-	ma.fieldMapping.ManyToOne = make(map[string][]string)
+	clear(ma.fieldMapping.OneToOne)
+	clear(ma.fieldMapping.OneToMany)
+	clear(ma.fieldMapping.ManyToOne)
 
 	// 按A字段分组映射关系，保持顺序
 	aFieldMappings := make(map[string][]string)

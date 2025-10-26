@@ -425,6 +425,7 @@ func (tr *TypeResolver) parseField(field *ast.Field) ([]FieldInfo, error) {
 	for _, fieldName := range fieldNames {
 		fieldType := tr.getFieldType(field.Type)
 		gormTag := tr.extractGormTag(field.Tag)
+		jsonTag := tr.extractJsonTag(field.Tag)
 		columnName := tr.extractColumnName(gormTag)
 
 		// 检查是否为JSONType
@@ -442,6 +443,7 @@ func (tr *TypeResolver) parseField(field *ast.Field) ([]FieldInfo, error) {
 			Name:       fieldName,
 			Type:       fieldType,
 			GormTag:    gormTag,
+			JsonTag:    jsonTag,
 			ColumnName: columnName,
 			IsJSONType: isJSONType,
 			JSONFields: jsonFields,
@@ -486,6 +488,22 @@ func (tr *TypeResolver) extractGormTag(tag *ast.BasicLit) string {
 
 	// 去除gorm:前缀和引号
 	gormContent := strings.TrimPrefix(tagStr, "gorm:")
+	return strings.Trim(gormContent, `"`)
+}
+
+// extractGormTag 提取json标签
+func (tr *TypeResolver) extractJsonTag(tag *ast.BasicLit) string {
+	if tag == nil {
+		return ""
+	}
+
+	tagStr := strings.Trim(tag.Value, "`")
+	if !strings.HasPrefix(tagStr, "json:") {
+		return ""
+	}
+
+	// 去除json:前缀和引号
+	gormContent := strings.TrimPrefix(tagStr, "json:")
 	return strings.Trim(gormContent, `"`)
 }
 

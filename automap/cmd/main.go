@@ -6,19 +6,22 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/davecgh/go-spew/spew"
 	"github.com/donutnomad/gotoolkit/automap"
 )
 
 func main() {
-	if len(os.Args) < 3 {
-		fmt.Println("用法: automap-cli <文件路径> <函数名>")
-		fmt.Println("示例: automap-cli ./mod.go MapAToB")
-		fmt.Println("      automap-cli /path/to/your/file.go YourFunction")
-		os.Exit(1)
-	}
+	//if len(os.Args) < 3 {
+	//	fmt.Println("用法: automap-cli <文件路径> <函数名>")
+	//	fmt.Println("示例: automap-cli ./mod.go MapAToB")
+	//	fmt.Println("      automap-cli /path/to/your/file.go YourFunction")
+	//	os.Exit(1)
+	//}
+	filePath := "/Users/ubuntu/Projects/go/work/taas-backend/internal/app/launchpad/infra/persistence/listingrepo/mapper.go"
+	funcName := "ListingPO.ToPO"
 
-	filePath := os.Args[1]
-	funcName := os.Args[2]
+	//filePath := os.Args[1]
+	//funcName := os.Args[2]
 
 	// 检查文件是否存在
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
@@ -57,7 +60,11 @@ func main() {
 		len(result.FieldMapping.OneToMany),
 		len(result.FieldMapping.JSONFields))
 
-	// 生成完整代码
+	spew.Dump("OneToOne", result.FieldMapping.OneToOne)
+	spew.Dump("一对多", result.FieldMapping.OneToMany)
+	spew.Dump("JSON字段", result.FieldMapping.JSONFields)
+
+	//// 生成完整代码
 	fmt.Printf("=== 生成的代码 ===\n")
 	code, err := automap.ParseAndGenerate(funcName, automap.WithFileContext(absPath))
 	if err != nil {
