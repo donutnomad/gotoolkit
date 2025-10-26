@@ -433,10 +433,6 @@ func (tr *TypeResolver) parseField(field *ast.Field) ([]FieldInfo, error) {
 		var jsonFields []JSONFieldInfo
 		if isJSONType {
 			jsonFields = tr.parseJSONFields(field.Type)
-			// 如果解析出的JSON字段为空，说明这是简单类型，不应该标记为JSONType
-			if len(jsonFields) == 0 {
-				isJSONType = false
-			}
 		}
 
 		fieldInfo := FieldInfo{

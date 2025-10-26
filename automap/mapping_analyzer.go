@@ -29,7 +29,6 @@ func NewMappingAnalyzer(fset *token.FileSet) *MappingAnalyzer {
 		fieldMapping: FieldMapping{
 			OneToOne:   make(map[string]string),
 			OneToMany:  make(map[string][]string),
-			ManyToOne:  make(map[string][]string),
 			JSONFields: make(map[string]JSONMapping),
 		},
 		varMap: make(map[string]ast.Expr),
@@ -450,10 +449,75 @@ func (ma *MappingAnalyzer) extractJSONFields(callExpr *ast.CallExpr, bFieldNameH
 			// 通过分析上下文来确定具体的字段映射
 			ma.processJSONFieldMapping(callExpr, compLit, fields, bFieldNameHint)
 		}
+	} else {
+		// 处理简单参数，如 datatypes.NewJSONType(entity.Images)
+		aFields := ma.extractAFieldsFromExpr(arg)
+		if len(aFields) > 0 {
+			fields = append(fields, aFields[0])
+			// 对于简单类型的JSON字段，直接创建映射
+			// 优先使用 findBFieldNameForJSONCall 的结果，而不是推断
+			actualBFieldName := ma.findBFieldNameForJSONCall(callExpr)
+			if actualBFieldName != "" {
+				ma.processSimpleJSONFieldMapping(callExpr, fields, actualBFieldName)
+			} else {
+				ma.processSimpleJSONFieldMapping(callExpr, fields, bFieldNameHint)
+			}
+		}
 	}
 
 	// 对于JSON字段，返回空数组，因为它们会通过JSONMapping处理
 	return []string{}
+}
+
+// processSimpleJSONFieldMapping 处理简单类型的JSON字段映射
+func (ma *MappingAnalyzer) processSimpleJSONFieldMapping(callExpr *ast.CallExpr, fields []string, bFieldNameHint string) {
+	// 使用传入的字段名提示，如果为空则尝试分析
+	bFieldName := bFieldNameHint
+	if bFieldName == "" {
+		bFieldName = ma.findBFieldNameForJSONCall(callExpr)
+	}
+
+	if bFieldName == "" {
+		// 如果找不到对应的B字段，使用默认逻辑
+		return
+	}
+
+	// 找到对应的B字段信息
+	var targetBField *FieldInfo
+	for _, bField := range ma.bType.Fields {
+		if bField.Name == bFieldName {
+			targetBField = &bField
+			break
+		}
+	}
+
+	if targetBField != nil && targetBField.IsJSONType {
+		// 为简单类型的JSON字段创建映射，不需要子字段映射
+		jsonMapping := NewJSONMapping(targetBField.GetColumnName())
+
+		// 对于简单类型，创建一个空的子字段映射
+		jsonMapping.SubFields = make(map[string]string)
+
+		ma.fieldMapping.JSONFields[targetBField.Name] = *jsonMapping
+
+		// 为每个A字段创建多对一映射关系，标记为JSON类型
+		for _, aField := range fields {
+			relation := MappingRelation{
+				AField:     aField,
+				BFields:    []string{targetBField.Name},
+				IsJSONType: true,
+				JSONField:  targetBField.Name,
+				Order:      ma.currentOrder,
+			}
+			ma.mappingRel = append(ma.mappingRel, relation)
+		}
+		ma.currentOrder++
+
+		// 同时创建一对一映射，以便代码生成器能找到
+		for _, aField := range fields {
+			ma.fieldMapping.OneToOne[aField] = targetBField.Name
+		}
+	}
 }
 
 // processJSONFieldMapping 处理JSON字段映射
@@ -514,7 +578,7 @@ func (ma *MappingAnalyzer) findBFieldNameForJSONCall(callExpr *ast.CallExpr) str
 	}
 
 	var result string
-	// 遍历函数体中的所有语句，寻找包含这个NewJSONType调用的赋值语句
+	// 遍历函数体中的所有语句，寻找包含这个NewJSONType调用的赋值语句或结构体字面量
 	ast.Inspect(ma.funcDecl, func(n ast.Node) bool {
 		if assign, ok := n.(*ast.AssignStmt); ok {
 			for i, rhs := range assign.Rhs {
@@ -524,6 +588,20 @@ func (ma *MappingAnalyzer) findBFieldNameForJSONCall(callExpr *ast.CallExpr) str
 						// 提取字段名，如 b.Token 中的 "Token"
 						if ident, ok := selector.X.(*ast.Ident); ok && ident.Name == "b" {
 							result = selector.Sel.Name
+							return false // 找到了，停止遍历
+						}
+					}
+				}
+			}
+		} else if compLit, ok := n.(*ast.CompositeLit); ok {
+			// 检查结构体字面量中的字段
+			for _, elt := range compLit.Elts {
+				if kv, ok := elt.(*ast.KeyValueExpr); ok {
+					// 检查值是否等于我们要找的调用表达式
+					if kv.Value == callExpr {
+						// 提取字段名
+						if ident, ok := kv.Key.(*ast.Ident); ok {
+							result = ident.Name
 							return false // 找到了，停止遍历
 						}
 					}
@@ -677,7 +755,6 @@ func (ma *MappingAnalyzer) buildFieldMapping() {
 	// 清空之前的映射
 	clear(ma.fieldMapping.OneToOne)
 	clear(ma.fieldMapping.OneToMany)
-	clear(ma.fieldMapping.ManyToOne)
 
 	// 按A字段分组映射关系，保持顺序
 	aFieldMappings := make(map[string][]string)
@@ -700,8 +777,17 @@ func (ma *MappingAnalyzer) buildFieldMapping() {
 			continue
 		}
 
-		// 跳过JSON字段映射
+		// 对于JSON字段映射，检查是否需要创建一对一映射
 		if rel.IsJSONType {
+			// 对于简单类型的JSON字段，检查对应的JSONField是否有子字段
+			if jsonMapping, exists := ma.fieldMapping.JSONFields[rel.JSONField]; exists {
+				// 如果没有子字段，说明是简单类型，需要创建一对一映射
+				if len(jsonMapping.SubFields) == 0 {
+					// 对于简单JSON字段，创建一对一映射
+					ma.fieldMapping.OneToOne[rel.AField] = rel.BFields[0]
+					delete(ma.fieldMapping.JSONFields, rel.JSONField)
+				}
+			}
 			continue
 		}
 

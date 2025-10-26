@@ -154,7 +154,6 @@ type MappingRelation struct {
 type FieldMapping struct {
 	OneToOne   map[string]string      // A字段 -> B字段（一对一）
 	OneToMany  map[string][]string    // A字段 -> B字段列表（一对多）
-	ManyToOne  map[string][]string    // B字段 -> A字段列表（多对一）
 	JSONFields map[string]JSONMapping // JSON字段映射
 }
 

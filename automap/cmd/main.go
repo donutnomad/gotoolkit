@@ -43,21 +43,21 @@ func main() {
 	fmt.Printf("函数名: %s\n\n", funcName)
 
 	// 解析映射函数
-	result, err := automap.ParseWithOptions(funcName, automap.WithFileContext(absPath))
-	if err != nil {
-		log.Fatalf("解析失败: %v", err)
-	}
-
-	// 显示解析结果
-	fmt.Printf("=== 解析结果 ===\n")
-	fmt.Printf("函数名: %s\n", result.FuncSignature.FuncName)
-	fmt.Printf("输入类型: %s\n", result.AType.Name)
-	fmt.Printf("输出类型: %s\n", result.BType.Name)
-	fmt.Printf("是否有ExportPatch: %t\n", result.HasExportPatch)
-	fmt.Printf("字段映射数量: 一对一(%d), 一对多(%d), JSON字段(%d)\n\n",
-		len(result.FieldMapping.OneToOne),
-		len(result.FieldMapping.OneToMany),
-		len(result.FieldMapping.JSONFields))
+	//result, err := automap.ParseWithOptions(funcName, automap.WithFileContext(absPath))
+	//if err != nil {
+	//	log.Fatalf("解析失败: %v", err)
+	//}
+	//
+	//// 显示解析结果
+	//fmt.Printf("=== 解析结果 ===\n")
+	//fmt.Printf("函数名: %s\n", result.FuncSignature.FuncName)
+	//fmt.Printf("输入类型: %s\n", result.AType.Name)
+	//fmt.Printf("输出类型: %s\n", result.BType.Name)
+	//fmt.Printf("是否有ExportPatch: %t\n", result.HasExportPatch)
+	//fmt.Printf("字段映射数量: 一对一(%d), 一对多(%d), JSON字段(%d)\n\n",
+	//	len(result.FieldMapping.OneToOne),
+	//	len(result.FieldMapping.OneToMany),
+	//	len(result.FieldMapping.JSONFields))
 
 	//// 生成完整代码
 	fmt.Printf("=== 生成的代码 ===\n")

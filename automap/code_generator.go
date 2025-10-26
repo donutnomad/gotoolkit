@@ -144,23 +144,52 @@ func writeField3(sb *strings.Builder,
 
 // generateFieldMappings 生成字段映射代码
 func (cg *CodeGenerator) generateFieldMappings(builder *strings.Builder) {
-	var aFieldNames = cg.result.AType.FieldIter()
+	//var aFieldNames = cg.result.AType.FieldIter()
 	var bField2Column = maps.Collect(cg.result.BType.FieldIter2())
+	var bFieldNames []string
+	for n := range cg.result.BType.FieldIter2() {
+		bFieldNames = append(bFieldNames, n)
+	}
 
-	// A作为主导
-	for aFieldName := range aFieldNames {
-		bField, ok := cg.result.FieldMapping.OneToOne[aFieldName]
-		if ok {
-			writeField(builder, aFieldName, []string{bField}, bField2Column, "")
-			continue
+	// B作为主导
+OUT:
+	for _, bField := range bFieldNames {
+		for a, b := range cg.result.FieldMapping.OneToOne {
+			if b == bField {
+				writeField(builder, a, []string{bField}, bField2Column, "")
+				continue OUT
+			}
 		}
-		bFields, ok := cg.result.FieldMapping.OneToMany[aFieldName]
-		if ok {
-			writeField(builder, aFieldName, bFields, bField2Column, "// 1对多")
+		for a, bs := range cg.result.FieldMapping.OneToMany {
+			if lo.Contains(bs, bField) {
+				writeField(builder, a, bs, bField2Column, "// 1对多")
+				continue OUT
+			}
 		}
 	}
 
+	// A作为主导
+	//for aFieldName := range aFieldNames {
+	//	bField, ok := cg.result.FieldMapping.OneToOne[aFieldName]
+	//	if ok {
+	//		writeField(builder, aFieldName, []string{bField}, bField2Column, "")
+	//		continue
+	//	}
+	//	bFields, ok := cg.result.FieldMapping.OneToMany[aFieldName]
+	//	if ok {
+	//		writeField(builder, aFieldName, bFields, bField2Column, "// 1对多")
+	//	}
+	//}
+
 	var findAField = func(bFieldName string) string {
+		// 首先在一对一映射中查找
+		for aField, bField := range cg.result.FieldMapping.OneToOne {
+			if bField == bFieldName {
+				return aField
+			}
+		}
+
+		// 然后在一对多映射中查找
 		for relName, relBFields := range cg.result.FieldMapping.OneToMany {
 			for _, bf := range relBFields {
 				if bf == bFieldName {
@@ -168,7 +197,19 @@ func (cg *CodeGenerator) generateFieldMappings(builder *strings.Builder) {
 				}
 			}
 		}
-		panic("找不到:1")
+
+		// 最后在JSON字段映射中查找
+		if _, exists := cg.result.FieldMapping.JSONFields[bFieldName]; exists {
+			// 对于简单类型的JSON字段，SubFields可能为空，但我们可以通过映射关系查找
+			// 查找映射关系中是否有对应的A字段
+			for _, relation := range cg.result.MappingRelations {
+				if relation.IsJSONType && relation.JSONField == bFieldName {
+					return relation.AField
+				}
+			}
+		}
+
+		panic(fmt.Sprintf("找不到对应的A字段，B字段名: %s", bFieldName))
 	}
 
 	// B作为主导
