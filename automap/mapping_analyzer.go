@@ -481,14 +481,11 @@ func (ma *MappingAnalyzer) processJSONFieldMapping(callExpr *ast.CallExpr, compL
 
 	if targetBField != nil && targetBField.IsJSONType {
 		// 为这个特定的JSON字段创建映射
-		jsonMapping := JSONMapping{
-			FieldName: targetBField.GetColumnName(), // 数据库的字段名
-			SubFields: make(map[string]string),
-		}
+		jsonMapping := NewJSONMapping(targetBField.GetColumnName())
 
 		// 分析具体的JSON字段映射
-		ma.analyzeJSONSubFields(compLit, &jsonMapping)
-		ma.fieldMapping.JSONFields[targetBField.Name] = jsonMapping
+		ma.analyzeJSONSubFields(compLit, jsonMapping)
+		ma.fieldMapping.JSONFields[targetBField.Name] = *jsonMapping
 
 		// 为每个A字段创建多对一映射关系，标记为JSON类型
 		for _, aField := range fields {
@@ -568,17 +565,11 @@ func (ma *MappingAnalyzer) processDefaultJSONMapping(compLit *ast.CompositeLit, 
 	// 找到第一个可用的JSONType字段
 	for _, bField := range ma.bType.Fields {
 		if bField.IsJSONType {
-			jsonMapping := JSONMapping{
-				FieldName: bField.ColumnName,
-			}
-			if jsonMapping.FieldName == "" {
-				jsonMapping.FieldName = ma.toSnakeCase(bField.Name)
-			}
-			jsonMapping.SubFields = make(map[string]string)
+			jsonMapping := NewJSONMapping(bField.GetColumnName())
 
 			// 分析具体的JSON字段映射
-			ma.analyzeJSONSubFields(compLit, &jsonMapping)
-			ma.fieldMapping.JSONFields[bField.Name] = jsonMapping
+			ma.analyzeJSONSubFields(compLit, jsonMapping)
+			ma.fieldMapping.JSONFields[bField.Name] = *jsonMapping
 
 			// 为每个A字段创建多对一映射关系，标记为JSON类型
 			for _, aField := range fields {
@@ -610,12 +601,8 @@ func (ma *MappingAnalyzer) analyzeJSONSubFields(compLit *ast.CompositeLit, jsonM
 					// 这是嵌套结构，需要递归分析
 					ma.analyzeNestedJSONField(jsonFieldName, nestedCompLit, jsonMapping)
 				} else {
-					// 这是简单字段
-					// 尝试获取JSON标签名，如果没有则使用字段名的snake_case
-					jsonTagName := ma.getJSONTagName(kv.Key, jsonFieldName)
-
 					// 映射A字段到JSON子字段
-					jsonMapping.SubFields[aFields[0]] = jsonTagName
+					jsonMapping.SetAToB(aFields[0], jsonFieldName)
 				}
 			} else if jsonFieldName != "" {
 				// 即使没有找到A字段，也要检查是否是嵌套结构
@@ -639,7 +626,7 @@ func (ma *MappingAnalyzer) analyzeNestedJSONField(parentField string, compLit *a
 				nestedJSONField := parentField + "." + nestedFieldName
 
 				// 映射A字段到嵌套的JSON子字段
-				jsonMapping.SubFields[aFields[0]] = nestedJSONField
+				jsonMapping.SetAToB(aFields[0], nestedJSONField)
 			}
 		}
 	}
@@ -653,11 +640,11 @@ func (ma *MappingAnalyzer) analyzeNestedJSONFieldWithoutAField(parentField strin
 			aFields := ma.extractAFieldsFromExpr(kv.Value)
 
 			if len(aFields) > 0 && nestedFieldName != "" {
-				// 构建嵌套的JSON字段名，如 "support_resource.placement_agreements"
+				// 构建嵌套的JSON字段名，如 "SupportResource.PlacementAgreements"
 				nestedJSONField := parentField + "." + nestedFieldName
 
 				// 映射A字段到嵌套的JSON子字段
-				jsonMapping.SubFields[aFields[0]] = nestedJSONField
+				jsonMapping.SetAToB(aFields[0], nestedJSONField)
 			}
 		}
 	}
@@ -722,19 +709,6 @@ func (ma *MappingAnalyzer) buildFieldMapping() {
 		aFieldMappings[rel.AField] = append(aFieldMappings[rel.AField], rel.BFields...)
 	}
 
-	// 设置有序的映射关系（包含非JSON字段）
-	ma.fieldMapping.OrderedRelations = []MappingRelation{}
-	ma.fieldMapping.OrderedJSONRelations = []MappingRelation{}
-	for _, rel := range sortedRelations {
-		if rel.AField != "" && len(rel.BFields) > 0 {
-			if rel.IsJSONType {
-				ma.fieldMapping.OrderedJSONRelations = append(ma.fieldMapping.OrderedJSONRelations, rel)
-			} else {
-				ma.fieldMapping.OrderedRelations = append(ma.fieldMapping.OrderedRelations, rel)
-			}
-		}
-	}
-
 	// 构建最终映射
 	for aField, bFields := range aFieldMappings {
 		// 去重
@@ -753,48 +727,6 @@ func (ma *MappingAnalyzer) buildFieldMapping() {
 		} else if len(finalBFields) > 1 {
 			// 一对多映射
 			ma.fieldMapping.OneToMany[aField] = finalBFields
-		}
-	}
-
-	// 重新构建有序关系，合并相同A字段的多个B字段
-	finalOrderedRelations := make(map[string]MappingRelation)
-	for _, rel := range ma.fieldMapping.OrderedRelations {
-		if existing, exists := finalOrderedRelations[rel.AField]; exists {
-			// 合并B字段
-			existing.BFields = append(existing.BFields, rel.BFields...)
-			// 去重
-			uniqueFields := make(map[string]bool)
-			var mergedBFields []string
-			for _, bField := range existing.BFields {
-				if !uniqueFields[bField] {
-					uniqueFields[bField] = true
-					mergedBFields = append(mergedBFields, bField)
-				}
-			}
-			existing.BFields = mergedBFields
-			finalOrderedRelations[rel.AField] = existing
-		} else {
-			finalOrderedRelations[rel.AField] = rel
-		}
-	}
-
-	// 重新构建有序关系切片
-	ma.fieldMapping.OrderedRelations = []MappingRelation{}
-	for _, rel := range ma.mappingRel {
-		if !rel.IsJSONType && rel.AField != "" {
-			if merged, exists := finalOrderedRelations[rel.AField]; exists {
-				// 检查是否已经添加过
-				found := false
-				for _, existing := range ma.fieldMapping.OrderedRelations {
-					if existing.AField == merged.AField {
-						found = true
-						break
-					}
-				}
-				if !found {
-					ma.fieldMapping.OrderedRelations = append(ma.fieldMapping.OrderedRelations, merged)
-				}
-			}
 		}
 	}
 }

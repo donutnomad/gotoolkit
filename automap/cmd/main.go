@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/davecgh/go-spew/spew"
 	"github.com/donutnomad/gotoolkit/automap"
 )
 
@@ -59,10 +58,6 @@ func main() {
 		len(result.FieldMapping.OneToOne),
 		len(result.FieldMapping.OneToMany),
 		len(result.FieldMapping.JSONFields))
-
-	spew.Dump("OneToOne", result.FieldMapping.OneToOne)
-	spew.Dump("一对多", result.FieldMapping.OneToMany)
-	spew.Dump("JSON字段", result.FieldMapping.JSONFields)
 
 	//// 生成完整代码
 	fmt.Printf("=== 生成的代码 ===\n")

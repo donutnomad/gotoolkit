@@ -2,9 +2,13 @@ package automap
 
 import (
 	"fmt"
+	"go/ast"
+	"maps"
+	"slices"
+	"sort"
 	"strings"
 
-	"github.com/davecgh/go-spew/spew"
+	"github.com/donutnomad/gotoolkit/internal/xast"
 	"github.com/samber/lo"
 )
 
@@ -104,261 +108,172 @@ func (cg *CodeGenerator) generateResultInit(builder *strings.Builder) {
 	builder.WriteString("\tvar ret = make(map[string]any)\n")
 }
 
+func writeField(sb *strings.Builder, aField string, bFields []string, bField2Column map[string]*FieldInfo, comment string) {
+	if len(comment) > 0 {
+		sb.WriteString(comment)
+	}
+	sb.WriteString(fmt.Sprintf("\tif fields.%s.IsPresent() {\n", aField))
+	// 生成多个字段的赋值
+	for _, bField := range bFields {
+		sb.WriteString(fmt.Sprintf("\t\tret[\"%s\"] = b.%s\n", bField2Column[bField].GetColumnName(), bField))
+	}
+	sb.WriteString("\t}\n")
+}
+
+func writeField2(sb *strings.Builder, aField string, bFieldName, bColumnName string, comment string) {
+	if len(comment) > 0 {
+		sb.WriteString(comment)
+	}
+	sb.WriteString(fmt.Sprintf("\tif fields.%s.IsPresent() {\n", aField))
+	sb.WriteString(fmt.Sprintf("\t\tret[\"%s\"] = b.%s\n", bColumnName, bFieldName))
+	sb.WriteString("\t}\n")
+}
+
+func writeField3(sb *strings.Builder,
+	aField string, bColumnName string,
+	jsonTagName, bFieldPath string,
+	comments ...string,
+) {
+	for _, comment := range comments {
+		sb.WriteString(comment)
+	}
+	sb.WriteString(fmt.Sprintf("\tif fields.%s.IsPresent() {\n", aField))
+	sb.WriteString(fmt.Sprintf("\t\tret[\"%s\"] = set.Set(\"%s\", b.%s)\n", bColumnName, jsonTagName, bFieldPath))
+	sb.WriteString("\t}\n")
+}
+
 // generateFieldMappings 生成字段映射代码
 func (cg *CodeGenerator) generateFieldMappings(builder *strings.Builder) {
-	// 按照函数中的赋值顺序生成字段映射
-	for _, rel := range cg.result.FieldMapping.OrderedRelations {
-		if len(rel.BFields) == 1 {
-			// 一对一映射
-			builder.WriteString(fmt.Sprintf("\tif fields.%s.IsPresent() {\n", rel.AField))
-			bFieldKey := cg.getBFieldKey(rel.BFields[0])
-			builder.WriteString(fmt.Sprintf("\t\tret[\"%s\"] = b.%s\n", bFieldKey, rel.BFields[0]))
-			builder.WriteString("\t}")
-		} else if len(rel.BFields) > 1 {
-			// 一对多映射
-			builder.WriteString(fmt.Sprintf("\t// A的一个字段，对应B的多字段\n"))
-			builder.WriteString(fmt.Sprintf("\tif fields.%s.IsPresent() {\n", rel.AField))
-			for _, bField := range rel.BFields {
-				bFieldKey := cg.getBFieldKey(bField)
-				builder.WriteString(fmt.Sprintf("\t\tret[\"%s\"] = b.%s\n", bFieldKey, bField))
-			}
-			builder.WriteString("\t}")
+	var aFieldNames = cg.result.AType.FieldIter()
+	var bField2Column = maps.Collect(cg.result.BType.FieldIter2())
+
+	// A作为主导
+	for aFieldName := range aFieldNames {
+		bField, ok := cg.result.FieldMapping.OneToOne[aFieldName]
+		if ok {
+			writeField(builder, aFieldName, []string{bField}, bField2Column, "")
+			continue
 		}
-		builder.WriteString("\n")
+		bFields, ok := cg.result.FieldMapping.OneToMany[aFieldName]
+		if ok {
+			writeField(builder, aFieldName, bFields, bField2Column, "// 1对多")
+		}
 	}
 
+	var findAField = func(bFieldName string) string {
+		for relName, relBFields := range cg.result.FieldMapping.OneToMany {
+			for _, bf := range relBFields {
+				if bf == bFieldName {
+					return relName
+				}
+			}
+		}
+		panic("找不到:1")
+	}
+
+	// B作为主导
 	// 生成JSON字段映射（多对一）
-	cg.generateJSONFieldMappings(builder)
-}
-
-// generateOneToOneMappings 生成一对一映射
-func (cg *CodeGenerator) generateOneToOneMappings(builder *strings.Builder) {
-	for aField, bField := range cg.result.FieldMapping.OneToOne {
-		// 添加注释
-		cg.generateMappingComment(builder, aField, []string{bField}, MappingOneToOne)
-
-		// 生成条件检查和赋值代码
-		builder.WriteString(fmt.Sprintf("\tif fields.%s.IsPresent() {\n", cg.toPascalCase(aField)))
-
-		// 获取B字段的键名
-		bFieldKey := cg.getBFieldKey(bField)
-		builder.WriteString(fmt.Sprintf("\t\tret[\"%s\"] = b.%s\n", bFieldKey, bField))
-		builder.WriteString("\t}\n\n")
-	}
-}
-
-// generateOneToManyMappings 生成一对多映射
-func (cg *CodeGenerator) generateOneToManyMappings(builder *strings.Builder) {
-	for aField, bFields := range cg.result.FieldMapping.OneToMany {
-		// 添加注释
-		cg.generateMappingComment(builder, aField, bFields, MappingOneToMany)
-
-		// 生成条件检查
-		builder.WriteString(fmt.Sprintf("\tif fields.%s.IsPresent() {\n", cg.toPascalCase(aField)))
-
-		// 生成多个字段的赋值
-		for _, bField := range bFields {
-			bFieldKey := cg.getBFieldKey(bField)
-			builder.WriteString(fmt.Sprintf("\t\tret[\"%s\"] = b.%s\n", bFieldKey, bField))
-		}
-		builder.WriteString("\t}\n\n")
-	}
-}
-
-// generateJSONFieldMappings 生成JSON字段映射
-func (cg *CodeGenerator) generateJSONFieldMappings(builder *strings.Builder) {
-	// 检查是否有JSON字段映射
-	if len(cg.result.FieldMapping.JSONFields) == 0 {
-		return
-	}
-
-	// 直接按照JSON字段的顺序生成映射，这样更可靠
 	for bFieldName, jsonMapping := range cg.result.FieldMapping.JSONFields {
+		bField, ok := bField2Column[bFieldName]
+		if !ok {
+			panic("cannot found b filed")
+		}
+		aGoField2BFieldPath := jsonMapping.SubFields
+		//fmt.Println("映射为:", bFieldName, bField.GetColumnName())
+		//fmt.Println("映射为:", bFieldName, bField.GetFullType())
+
+		fullType := bField.GetFullType()
+
 		// 检查是否有子字段，如果没有子字段说明是简单类型，直接赋值
-		if len(jsonMapping.SubFields) == 0 {
-			// 简单类型的JSON字段，直接赋值
-			jsonColumnName := cg.getBFieldColumnKey(bFieldName)
-			if jsonColumnName == "" {
-				jsonColumnName = cg.toSnakeCase(bFieldName)
+		if len(jsonMapping.SubFields) == 0 || strings.Contains(fullType, "JSONSlice") {
+			var aFieldName = findAField(bFieldName)
+			var bColumnName = bField.GetColumnName()
+			writeField2(builder, aFieldName, bFieldName, bColumnName, "")
+			continue
+		}
+		if strings.Contains(fullType, "JSONType[") { // datatypes.JSONType， 使用JSONSet
+			// 查找类型
+			thisType := xast.GetFieldType((bField.ASTField.Type).(*ast.IndexExpr).Index, nil)
+			thisTypeInfo := NewTypeInfoFromName(thisType)
+			err := cg.typeResolver.ResolveTypeCurrent(thisTypeInfo)
+			if err != nil {
+				panic(fmt.Sprintf("cannot resolveType %s", thisType))
 			}
 
-			// 找到对应的A字段名
-			var aFieldName string
-			for relName, relBFields := range cg.result.FieldMapping.OneToMany {
-				for _, bf := range relBFields {
-					if bf == bFieldName {
-						aFieldName = relName
-						break
-					}
-				}
+			bColumnName := bField.GetColumnName()
+			type tmpT struct {
+				bFieldPath string
+				aField     string
 			}
-			if aFieldName == "" {
-				// 如果找不到，尝试从OrderedRelations中查找
-				for _, rel := range cg.result.FieldMapping.OrderedRelations {
-					for _, bf := range rel.BFields {
-						if bf == bFieldName {
-							aFieldName = rel.AField
-							break
-						}
-					}
-				}
+			const normalKey = "0"
+			var nestedMapping = make(map[string][]tmpT) // bFieldPath => aField
+			for aField, bFieldPath := range aGoField2BFieldPath {
+				parts := strings.Split(bFieldPath, ".")
+				k := lo.Ternary(len(parts) == 1, normalKey, parts[0])
+				nestedMapping[k] = append(nestedMapping[k], tmpT{bFieldPath, aField})
 			}
 
-			if aFieldName != "" {
-				builder.WriteString(fmt.Sprintf("\tif fields.%s.IsPresent() {\n", aFieldName))
-				builder.WriteString(fmt.Sprintf("\t\tret[\"%s\"] = b.%s\n", jsonColumnName, bFieldName))
-				builder.WriteString("\t}\n")
-			}
-		} else {
-			// 检查是否为JSONSlice类型
-			if cg.isJSONSliceField(bFieldName) {
-				// JSONSlice字段作为整体直接赋值
-				jsonColumnName := cg.getBFieldColumnKey(bFieldName)
-				if jsonColumnName == "" {
-					jsonColumnName = cg.toSnakeCase(bFieldName)
-				}
+			builder.WriteString(fmt.Sprintf("\t// B.%s字段对应A的多字段\n", bFieldName))
+			builder.WriteString("\t{\n")
+			builder.WriteString(fmt.Sprintf("\tset := datatypes.JSONSet(\"%s\")\n", bColumnName))
 
-				// 找到对应的A字段名
-				var aFieldName string
-				for relName, relBFields := range cg.result.FieldMapping.OneToMany {
-					for _, bf := range relBFields {
-						if bf == bFieldName {
-							aFieldName = relName
-							break
-						}
-					}
-				}
-				if aFieldName == "" {
-					// 如果找不到，尝试从OrderedRelations中查找
-					for _, rel := range cg.result.FieldMapping.OrderedRelations {
-						for _, bf := range rel.BFields {
-							if bf == bFieldName {
-								aFieldName = rel.AField
-								break
-							}
-						}
-					}
-				}
+			keys := slices.Collect(maps.Keys(nestedMapping))
+			sort.Strings(keys)
 
-				if aFieldName != "" {
-					builder.WriteString(fmt.Sprintf("\tif fields.%s.IsPresent() {\n", aFieldName))
-					builder.WriteString(fmt.Sprintf("\t\tret[\"%s\"] = b.%s\n", jsonColumnName, bFieldName))
+			for _, k := range keys {
+				if k != normalKey {
+					builder.WriteString(fmt.Sprintf("// %s\n", k))
+					builder.WriteString("\t{\n")
+				}
+				for _, tmp := range nestedMapping[k] {
+					writeField3(builder, tmp.aField, bColumnName,
+						cg.getJsonName(thisTypeInfo, tmp.bFieldPath),
+						fmt.Sprintf("%s.Data().%s", bFieldName, tmp.bFieldPath),
+					)
+				}
+				if k != normalKey {
 					builder.WriteString("\t}\n")
 				}
-			} else {
-				// JSONType复杂字段，使用JSONSet
-				// 添加注释
-				builder.WriteString(fmt.Sprintf("\t// B.%s字段对应A的多字段\n", bFieldName))
-				builder.WriteString("\t{\n")
-
-				// 获取JSON字段在数据库中的列名（使用B类型字段的ColumnName）
-				jsonColumnName := cg.getBFieldColumnKey(bFieldName)
-				if jsonColumnName == "" {
-					jsonColumnName = jsonMapping.FieldName
-					if jsonColumnName == "" {
-						jsonColumnName = cg.toSnakeCase(bFieldName)
-					}
-				}
-
-				// 分析嵌套字段结构
-				spew.Dump("彩虹", jsonMapping.SubFields)
-				nestedFields := cg.analyzeNestedFields(jsonMapping.SubFields)
-
-				// 生成简单字段的映射
-				if len(nestedFields.SimpleFields) > 0 {
-					builder.WriteString(fmt.Sprintf("\t\tset := datatypes.JSONSet(\"%s\")\n", jsonColumnName))
-
-					for aField, jsonSubField := range nestedFields.SimpleFields {
-						jsonFieldValue := cg.buildJSONFieldValue(bFieldName, jsonSubField)
-						builder.WriteString(fmt.Sprintf("\t\tif fields.%s.IsPresent() {\n", aField))
-						builder.WriteString(fmt.Sprintf("\t\t\tret[\"%s\"] = set.Set(\"%s\", %s)\n",
-							jsonColumnName, jsonSubField, jsonFieldValue))
-						builder.WriteString("\t\t}\n")
-					}
-				}
-
-				// 生成嵌套字段的映射 - 拆分为单独的JSON字段设置，并按嵌套对象分组
-				for nestedField, subFieldMapping := range nestedFields.NestedFields {
-					if len(subFieldMapping) > 0 {
-						// 添加分组注释
-						builder.WriteString(fmt.Sprintf("\t\t// %s 字段组\n", nestedField))
-						builder.WriteString("\t\t{\n")
-
-						for aField, jsonSubField := range subFieldMapping {
-							// 构建完整的JSON字段路径，如 "support_resource.other_docs"
-							fullJSONField := fmt.Sprintf("%s.%s", cg.toSnakeCase(nestedField), cg.toSnakeCase(jsonSubField))
-
-							// 构建字段值访问路径，如 b.Attribute.Data().SupportResource.OtherDocs
-							fieldValue := fmt.Sprintf("b.%s.Data().%s.%s", bFieldName, nestedField, jsonSubField)
-
-							builder.WriteString(fmt.Sprintf("\t\t\tif fields.%s.IsPresent() {\n", aField))
-							builder.WriteString(fmt.Sprintf("\t\t\t\tret[\"%s\"] = set.Set(\"%s\", %s)\n",
-								jsonColumnName, fullJSONField, fieldValue))
-							builder.WriteString("\t\t\t}\n")
-						}
-
-						builder.WriteString("\t\t}\n")
-					}
-				}
-
-				builder.WriteString("\t}")
 			}
+			builder.WriteString("\t}")
 		}
 	}
 }
 
-// generateMappingComment 生成映射注释
-func (cg *CodeGenerator) generateMappingComment(builder *strings.Builder, aField string, bFields []string, mappingType MappingType) {
-	switch mappingType {
-	case MappingOneToOne:
-		builder.WriteString(fmt.Sprintf("\t// A的一个字段，对应B的一个字段\n"))
-	case MappingOneToMany:
-		builder.WriteString(fmt.Sprintf("\t// A的一个字段，对应B的多个字段\n"))
-	case MappingManyToOne:
-		builder.WriteString(fmt.Sprintf("\t// B的一个字段，对应A的多个字段\n"))
+func (cg *CodeGenerator) getJsonName(thisTypeInfo *TypeInfo, path string) (result string) {
+	getF := func(typeInfo *TypeInfo, n string) *FieldInfo {
+		for _, f := range typeInfo.Fields {
+			if f.Name == n {
+				return &f
+			}
+		}
+		panic(fmt.Sprintf("cannot get json name %s", n))
 	}
+	var myTypeInfo = thisTypeInfo
+	parts := strings.Split(path, ".")
+	if len(parts) == 1 {
+		return getF(myTypeInfo, path).GetJsonName()
+	}
+	for i, part := range parts {
+		jn := getF(myTypeInfo, part)
+		if i == len(parts)-1 {
+			result += jn.GetJsonName()
+			continue
+		}
+		myTypeInfo = NewTypeInfoFromName(jn.GetFullType())
+		err := cg.typeResolver.ResolveTypeCurrent(myTypeInfo)
+		if err != nil {
+			panic(fmt.Sprintf("cannot resolveType %s", part))
+		}
+		result += jn.GetJsonName() + "."
+	}
+	return result
 }
 
 // generateReturnStatement 生成返回语句
 func (cg *CodeGenerator) generateReturnStatement(builder *strings.Builder) {
 	builder.WriteString("\t\nreturn ret\n")
 	builder.WriteString("}\n") // 函数结束括号
-}
-
-// getBFieldKey 获取B字段的键名
-func (cg *CodeGenerator) getBFieldKey(fieldName string) string {
-	return cg.getBFieldColumnKey(fieldName)
-}
-
-// getBFieldColumnKey 获取B字段的GORM列名
-func (cg *CodeGenerator) getBFieldColumnKey(fieldName string) string {
-	// 处理嵌入字段（如 Model.ID）- 直接使用内部字段名
-	if dotIndex := strings.Index(fieldName, "."); dotIndex != -1 {
-		subFieldName := fieldName[dotIndex+1:]
-		// 对于嵌入字段，直接使用内部字段名的列名
-		return cg.toSnakeCase(subFieldName)
-	}
-
-	// 在B类型中查找字段
-	for _, field := range cg.result.BType.Fields {
-		if field.Name == fieldName {
-			if field.ColumnName != "" {
-				return field.ColumnName
-			}
-			return cg.toSnakeCase(field.Name)
-		}
-	}
-
-	// 如果找不到字段，使用默认规则
-	return cg.toSnakeCase(fieldName)
-}
-
-// toPascalCase 转换为PascalCase
-func (cg *CodeGenerator) toPascalCase(s string) string {
-	if s == "" {
-		return s
-	}
-	return strings.ToUpper(s[:1]) + s[1:]
 }
 
 // toSnakeCase 转换为snake_case
@@ -380,126 +295,6 @@ func (cg *CodeGenerator) toSnakeCase(s string) string {
 		result = append(result, r)
 	}
 	return strings.ToLower(string(result))
-}
-
-// buildJSONFieldValue 构建B结构体中JSON字段的访问路径
-func (cg *CodeGenerator) buildJSONFieldValue(bField, jsonSubField string) string {
-	// 将JSON子字段名转换为Go字段名格式
-	// 例如：name -> Name, symbol -> Symbol, total_supply -> TotalSupply
-	goFieldName := cg.jsonNameToGoFieldName(jsonSubField)
-
-	// 对于datatypes.JSONType，需要调用Data()方法来获取JSON数据
-	return fmt.Sprintf("b.%s.Data().%s", bField, goFieldName)
-}
-
-// jsonNameToGoFieldName 将JSON字段名转换为Go字段名
-func (cg *CodeGenerator) jsonNameToGoFieldName(jsonName string) string {
-	// 转换：首字母大写，下划线后字母大写
-	parts := strings.Split(jsonName, "_")
-	for i, part := range parts {
-		if len(part) > 0 {
-			parts[i] = strings.ToUpper(part[:1]) + strings.ToLower(part[1:])
-		}
-	}
-	return strings.Join(parts, "")
-}
-
-// GenerateWithTemplate 使用模板生成代码
-func (cg *CodeGenerator) GenerateWithTemplate(result *ParseResult, template string) (string, error) {
-	// TODO: 实现基于模板的代码生成
-	cg.result = result
-
-	// 简单的模板替换
-	code := template
-	code = strings.ReplaceAll(code, "{{.ATypeName}}", result.AType.Name)
-	code = strings.ReplaceAll(code, "{{.BTypeName}}", result.BType.Name)
-	code = strings.ReplaceAll(code, "{{.FuncName}}", result.FuncSignature.FuncName)
-	code = strings.ReplaceAll(code, "{{.MapperCall}}", cg.generateMapperCallString())
-	code = strings.ReplaceAll(code, "{{.FieldMappings}}", cg.generateFieldMappingsString())
-
-	return code, nil
-}
-
-// generateMapperCallString 生成映射调用字符串
-func (cg *CodeGenerator) generateMapperCallString() string {
-	funcName := cg.result.FuncSignature.FuncName
-	if cg.result.FuncSignature.Receiver != "" {
-		funcName = cg.result.FuncSignature.Receiver + "." + funcName
-	}
-	return fmt.Sprintf("b := %s(input)", funcName)
-}
-
-// generateFieldMappingsString 生成字段映射字符串
-func (cg *CodeGenerator) generateFieldMappingsString() string {
-	var builder strings.Builder
-	cg.generateFieldMappings(&builder)
-	return builder.String()
-}
-
-// NestedFieldAnalysis 嵌套字段分析结果
-type NestedFieldAnalysis struct {
-	SimpleFields map[string]string            // 简单字段：A字段 -> JSON字段
-	NestedFields map[string]map[string]string // 嵌套字段：嵌套名 -> (A字段 -> JSON子字段)
-}
-
-// analyzeNestedFields 分析嵌套字段结构
-func (cg *CodeGenerator) analyzeNestedFields(subFields map[string]string) NestedFieldAnalysis {
-	analysis := NestedFieldAnalysis{
-		SimpleFields: make(map[string]string),
-		NestedFields: make(map[string]map[string]string),
-	}
-
-	// 通过分析JSON字段名来识别嵌套结构
-	// 例如：issuer.issuer_name 表示嵌套在 issuer 中的 issuer_name
-	for aField, jsonField := range subFields {
-		if dotIndex := strings.Index(jsonField, "."); dotIndex != -1 {
-			// 这是一个嵌套字段
-			nestedField := jsonField[:dotIndex]
-			subFieldName := jsonField[dotIndex+1:]
-
-			if analysis.NestedFields[nestedField] == nil {
-				analysis.NestedFields[nestedField] = make(map[string]string)
-			}
-			analysis.NestedFields[nestedField][aField] = subFieldName
-		} else {
-			// 这是一个简单字段
-			analysis.SimpleFields[aField] = jsonField
-		}
-	}
-
-	return analysis
-}
-
-// buildNestedObjectValue 构建嵌套对象值
-func (cg *CodeGenerator) buildNestedObjectValue(bFieldName, nestedField string, subFieldMapping map[string]string) string {
-	// 直接使用嵌套对象，例如：b.Attribute.Data().SupportResource 或 b.Attribute.Data().Issuer
-	return fmt.Sprintf("b.%s.Data().%s", bFieldName, nestedField)
-}
-
-// getNestedType 获取嵌套类型名
-func (cg *CodeGenerator) getNestedType(nestedField string) string {
-	// 根据JSON字段名推断嵌套类型
-	switch nestedField {
-	case "SupportResource":
-		return "SupportResourceInfo"
-	case "Issuer":
-		return "IssuerInfo"
-	default:
-		// 默认使用首字母大写的格式
-		return cg.toPascalCase(nestedField)
-	}
-}
-
-// isJSONSliceField 检查字段是否为JSONSlice类型
-func (cg *CodeGenerator) isJSONSliceField(fieldName string) bool {
-	// 在B类型中查找字段
-	for _, field := range cg.result.BType.Fields {
-		if field.Name == fieldName {
-			// 检查字段类型是否包含JSONSlice
-			return strings.Contains(field.Type, "JSONSlice")
-		}
-	}
-	return false
 }
 
 // GenerateImports 生成需要的导入语句
@@ -549,13 +344,6 @@ func (cg *CodeGenerator) GenerateFullCode(result *ParseResult) string {
 	return builder.String()
 }
 
-// ValidateGeneratedCode 验证生成的代码
-func (cg *CodeGenerator) ValidateGeneratedCode(code string) error {
-	// TODO: 实现生成代码的验证逻辑
-	// 可以使用go/parser解析生成的代码，检查语法是否正确
-	return nil
-}
-
 // validateFieldCoverage 验证字段覆盖情况
 func (cg *CodeGenerator) validateFieldCoverage(generatedCode string) error {
 	// 收集所有被赋值的数据库字段名
@@ -580,7 +368,11 @@ func (cg *CodeGenerator) validateFieldCoverage(generatedCode string) error {
 	}
 
 	// 获取应该在patch中检查的B类型字段名（只检查A类型patch中存在的字段对应的B字段）
-	expectedFields := cg.getExpectedPatchFields()
+	expectedFields := lo.Map(slices.Collect(
+		maps.Values(maps.Collect(cg.result.BType.FieldIter2())),
+	), func(item *FieldInfo, index int) string {
+		return item.GetColumnName()
+	})
 
 	// 检查哪些字段缺失
 	var missingFields []string
@@ -597,35 +389,12 @@ func (cg *CodeGenerator) validateFieldCoverage(generatedCode string) error {
 	return nil
 }
 
-// getExpectedPatchFields 获取应该在patch中检查的B类型字段名
-func (cg *CodeGenerator) getExpectedPatchFields() []string {
-	var fieldName []string
-	for _, item := range cg.result.BType.Fields {
-		if item.IsEmbedded {
-			// 处理嵌入字段（如 Model）
-			embeddedFields := cg.getEmbeddedDatabaseFields(item.Type)
-			fieldName = append(fieldName, embeddedFields...)
-		} else {
-			fieldName = append(fieldName, item.ColumnName)
-		}
-	}
-	return lo.Uniq(fieldName)
-}
-
 // getEmbeddedDatabaseFields 获取嵌入结构体的数据库字段名
-func (cg *CodeGenerator) getEmbeddedDatabaseFields(embeddedType string) []string {
-	var fields []string
+func (cg *CodeGenerator) getEmbeddedDatabaseFields(embeddedType string) []FieldInfo {
 	typeInfo := NewTypeInfoFromName(embeddedType)
 	err := cg.typeResolver.ResolveTypeCurrent(typeInfo)
 	if err != nil {
 		panic(fmt.Sprintf("cannot find typeInfo: %s", embeddedType))
 	}
-	for _, field := range typeInfo.Fields {
-		if field.ColumnName != "" {
-			fields = append(fields, field.ColumnName)
-		} else {
-			fields = append(fields, cg.toSnakeCase(field.Name))
-		}
-	}
-	return fields
+	return typeInfo.Fields
 }

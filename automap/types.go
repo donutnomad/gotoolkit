@@ -1,10 +1,15 @@
 package automap
 
 import (
+	"fmt"
 	"go/ast"
 	"go/token"
+	"iter"
 	"strings"
-	"unicode"
+
+	"github.com/donutnomad/gotoolkit/internal/gormparse"
+	"github.com/donutnomad/gotoolkit/internal/xast"
+	"github.com/samber/lo"
 )
 
 // FuncSignature 函数签名信息
@@ -29,6 +34,43 @@ type TypeInfo struct {
 	Methods   []MethodInfo // 方法列表
 }
 
+func (t *TypeInfo) FieldIter() iter.Seq[string] {
+	return func(yield func(string) bool) {
+		for _, item := range t.Fields {
+			if item.IsEmbedded {
+				for _, ef := range item.EmbeddedFields {
+					if !yield(ef.Name) {
+						return
+					}
+				}
+			} else {
+				if !yield(item.Name) {
+					return
+				}
+			}
+		}
+	}
+}
+func (t *TypeInfo) FieldIter2() iter.Seq2[string, *FieldInfo] {
+	return func(yield func(string, *FieldInfo) bool) {
+		for _, item := range t.Fields {
+			if item.IsEmbedded {
+				for _, ef := range item.EmbeddedFields {
+					// orm.Model  DefaultID
+					// => Model.DefaultID
+					if !yield(fmt.Sprintf("%s.%s", lo.LastOrEmpty(strings.Split(item.Type, ".")), ef.Name), &ef) {
+						return
+					}
+				}
+			} else {
+				if !yield(item.Name, &item) {
+					return
+				}
+			}
+		}
+	}
+}
+
 // NewTypeInfoFromName
 // name: xxx.XXX 或者XXX
 func NewTypeInfoFromName(fullName string) *TypeInfo {
@@ -47,31 +89,40 @@ func NewTypeInfoFromName(fullName string) *TypeInfo {
 
 // FieldInfo 字段信息
 type FieldInfo struct {
-	Name       string          // 字段名
-	Type       string          // 字段类型
-	GormTag    string          // GORM标签
-	JsonTag    string          // GORM标签
-	ColumnName string          // 数据库列名
-	IsJSONType bool            // 是否为JSONType
-	JSONFields []JSONFieldInfo // JSON字段信息
-	SourceType string          // 来源类型（嵌入字段）
-	IsEmbedded bool            // 是否为嵌入字段
-	ASTField   *ast.Field      // AST字段节点
-	StructType *ast.StructType // 字段是所属的结构体
+	Name           string          // 字段名
+	Type           string          // 字段类型
+	GormTag        string          // GORM标签
+	JsonTag        string          // GORM标签
+	ColumnName     string          // 数据库列名
+	IsJSONType     bool            // 是否为JSONType
+	JSONFields     []JSONFieldInfo // JSON字段信息
+	SourceType     string          // 来源类型（嵌入字段）
+	IsEmbedded     bool            // 是否为嵌入字段
+	ASTField       *ast.Field      // AST字段节点
+	StructType     *ast.StructType // 字段是所属的结构体
+	EmbeddedFields []FieldInfo
+}
+
+func (f *FieldInfo) GetFullType() string {
+	return xast.GetFieldType(f.ASTField.Type, nil)
+}
+
+func (f *FieldInfo) GetJsonName() string {
+	jsonTag := f.JsonTag
+	// 如果没有json tag，或者tag值为空字符串，则返回空
+	if jsonTag == "" {
+		return ""
+	}
+	// 如果tag是 "-"，表示忽略此字段，返回空
+	if jsonTag == "-" {
+		return ""
+	}
+	parts := strings.SplitN(jsonTag, ",", 2)
+	return parts[0]
 }
 
 func (f *FieldInfo) GetColumnName() string {
-	if f.ColumnName == "" {
-		var result []rune
-		for i, r := range f.Name {
-			if i > 0 && unicode.IsUpper(r) {
-				result = append(result, '_')
-			}
-			result = append(result, unicode.ToLower(r))
-		}
-		return string(result)
-	}
-	return f.ColumnName
+	return gormparse.ExtractColumnName(f.Name, "gorm:\""+f.GormTag+"\"")
 }
 
 // JSONFieldInfo JSON字段信息
@@ -101,18 +152,26 @@ type MappingRelation struct {
 
 // FieldMapping 字段映射
 type FieldMapping struct {
-	OneToOne             map[string]string      // A字段 -> B字段（一对一）
-	OneToMany            map[string][]string    // A字段 -> B字段列表（一对多）
-	ManyToOne            map[string][]string    // B字段 -> A字段列表（多对一）
-	JSONFields           map[string]JSONMapping // JSON字段映射
-	OrderedRelations     []MappingRelation      // 按顺序排列的映射关系（非JSON）
-	OrderedJSONRelations []MappingRelation      // 按顺序排列的JSON映射关系
+	OneToOne   map[string]string      // A字段 -> B字段（一对一）
+	OneToMany  map[string][]string    // A字段 -> B字段列表（一对多）
+	ManyToOne  map[string][]string    // B字段 -> A字段列表（多对一）
+	JSONFields map[string]JSONMapping // JSON字段映射
 }
 
 // JSONMapping JSON字段映射
 type JSONMapping struct {
-	FieldName string            // 数据库的字段名
-	SubFields map[string]string // A字段 -> JSON子字段
+	FieldName string            // B: 数据库的字段名
+	SubFields map[string]string // A字段 -> B内部字段，Go的字段名,比如 (string) (len=19) "PlacementAgreements": (string) (len=35) "SupportResource.PlacementAgreements",
+}
+
+func NewJSONMapping(bColumnName string) *JSONMapping {
+	return &JSONMapping{FieldName: bColumnName,
+		SubFields: make(map[string]string),
+	}
+}
+
+func (j *JSONMapping) SetAToB(aGoFieldName string, bPath string) {
+	j.SubFields[aGoFieldName] = bPath
 }
 
 // ParseResult 解析结果
@@ -124,37 +183,4 @@ type ParseResult struct {
 	HasExportPatch   bool
 	GeneratedCode    string
 	MappingRelations []MappingRelation
-}
-
-// MappingType 映射类型枚举
-type MappingType int
-
-const (
-	MappingOneToOne MappingType = iota
-	MappingOneToMany
-	MappingManyToOne
-	MappingJSON
-)
-
-// Error 自定义错误类型
-type Error struct {
-	Msg    string
-	Pos    token.Pos
-	Detail string
-}
-
-func (e *Error) Error() string {
-	if e.Detail != "" {
-		return e.Msg + ": " + e.Detail
-	}
-	return e.Msg
-}
-
-// NewError 创建新错误
-func NewError(msg string, pos token.Pos, detail string) *Error {
-	return &Error{
-		Msg:    msg,
-		Pos:    pos,
-		Detail: detail,
-	}
 }

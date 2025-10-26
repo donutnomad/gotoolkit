@@ -66,6 +66,20 @@ func (am *AutoMap) ParseWithContext(funcName, callerFile string) (*ParseResult, 
 		return nil, fmt.Errorf("分析映射关系失败: %w", err)
 	}
 
+	// 解析A和B的嵌套类型
+	for idx, item := range aType.Fields {
+		if item.IsEmbedded {
+			item.EmbeddedFields = am.codeGenerator.getEmbeddedDatabaseFields(item.Type)
+			aType.Fields[idx] = item
+		}
+	}
+	for idx, item := range bType.Fields {
+		if item.IsEmbedded {
+			item.EmbeddedFields = am.codeGenerator.getEmbeddedDatabaseFields(item.Type)
+			bType.Fields[idx] = item
+		}
+	}
+
 	// 检查ExportPatch方法
 	hasExportPatch := am.typeResolver.HasExportPatchMethod(aType)
 
