@@ -13,22 +13,27 @@ import (
 // TypeResolver 类型解析器，支持跨包类型查找
 type TypeResolver struct {
 	fset        *token.FileSet
-	cache       map[string]*TypeInfo // 类型缓存
-	importMap   map[string]string    // import映射
-	goMod       string               // go.mod文件路径
+	cache       map[string]*TypeInfo         // 类型缓存
+	importMap   map[string]string            // import映射
+	fileImports map[string]map[string]string // 每个文件的import映射
+	goMod       string                       // go.mod文件路径
 	currentFile string
 }
 
 // NewTypeResolver 创建类型解析器
 func NewTypeResolver() *TypeResolver {
 	return &TypeResolver{
-		fset:      token.NewFileSet(),
-		cache:     make(map[string]*TypeInfo),
-		importMap: make(map[string]string),
+		fset:        token.NewFileSet(),
+		cache:       make(map[string]*TypeInfo),
+		importMap:   make(map[string]string),
+		fileImports: make(map[string]map[string]string),
 	}
 }
 
 func (tr *TypeResolver) ResolveTypeCurrent(typeInfo *TypeInfo) error {
+	if tr.currentFile == "" {
+		return fmt.Errorf("currentFile未设置，无法解析类型: %s", typeInfo.FullName)
+	}
 	return tr.ResolveType(typeInfo, tr.currentFile)
 }
 
@@ -80,6 +85,13 @@ func (tr *TypeResolver) ResolveType(typeInfo *TypeInfo, currentFile string) erro
 
 	// 更新类型信息
 	typeInfo.FilePath = filePath
+
+	// 重要：如果找到的文件路径与当前文件不同，需要重新解析imports
+	if filePath != currentFile && filePath != "" {
+		if err := tr.parseImports(filePath); err != nil {
+			return fmt.Errorf("解析类型定义文件的imports失败: %w", err)
+		}
+	}
 
 	// 解析结构体字段
 	if structType, ok := typeSpec.Type.(*ast.StructType); ok {
@@ -140,27 +152,37 @@ func (tr *TypeResolver) parseImports(filePath string) error {
 		}
 	}
 
+	// 检查是否已经解析过这个文件的imports
+	if imports, exists := tr.fileImports[filePath]; exists {
+		tr.importMap = imports
+		return nil
+	}
+
 	file, err := parser.ParseFile(tr.fset, filePath, nil, parser.ImportsOnly)
 	if err != nil {
 		return fmt.Errorf("解析文件失败: %w", err)
 	}
 
-	// 清空之前的import映射
-	tr.importMap = make(map[string]string)
+	// 创建新的import映射
+	newImports := make(map[string]string)
 
 	for _, imp := range file.Imports {
 		importPath := strings.Trim(imp.Path.Value, "\"")
 
 		if imp.Name != nil {
 			// 有别名的情况
-			tr.importMap[imp.Name.Name] = importPath
+			newImports[imp.Name.Name] = importPath
 		} else {
 			// 使用包名的最后一部分作为默认名称
 			parts := strings.Split(importPath, "/")
 			defaultName := parts[len(parts)-1]
-			tr.importMap[defaultName] = importPath
+			newImports[defaultName] = importPath
 		}
 	}
+
+	// 缓存import映射并设置当前映射
+	tr.fileImports[filePath] = newImports
+	tr.importMap = newImports
 
 	return nil
 }
@@ -186,7 +208,7 @@ func (tr *TypeResolver) resolvePackagePath(packageName, currentFile string) (str
 		return dir, nil
 	}
 
-	// 检查是否在import映射中
+	// 检查是否在import映射中（这是关键步骤）
 	if importPath, exists := tr.importMap[packageName]; exists {
 		// 将import路径转换为文件系统路径
 		return tr.importPathToFilePath(importPath, currentFile)
@@ -238,7 +260,9 @@ func (tr *TypeResolver) importPathToFilePath(importPath, currentFile string) (st
 	if strings.HasPrefix(importPath, "./") || strings.HasPrefix(importPath, "../") {
 		baseDir := filepath.Dir(currentFile)
 		path, _ := filepath.Abs(filepath.Join(baseDir, importPath))
-		return path, nil
+		if _, err := os.Stat(path); err == nil {
+			return path, nil
+		}
 	}
 
 	// 查找go.mod文件
@@ -259,7 +283,10 @@ func (tr *TypeResolver) importPathToFilePath(importPath, currentFile string) (st
 	if strings.HasPrefix(importPath, moduleName) {
 		relativePath := strings.TrimPrefix(importPath, moduleName)
 		relativePath = strings.TrimPrefix(relativePath, "/")
-		return filepath.Join(moduleRoot, relativePath), nil
+		finalPath := filepath.Join(moduleRoot, relativePath)
+		if _, err := os.Stat(finalPath); err == nil {
+			return finalPath, nil
+		}
 	}
 
 	// 尝试直接在vendor目录中查找
@@ -268,7 +295,7 @@ func (tr *TypeResolver) importPathToFilePath(importPath, currentFile string) (st
 		return vendorPath, nil
 	}
 
-	return "", fmt.Errorf("无法解析import路径: %s", importPath)
+	return "", fmt.Errorf("无法解析import路径: %s (currentFile: %s, moduleRoot: %s)", importPath, currentFile, moduleRoot)
 }
 
 // findGoModFile 查找go.mod文件

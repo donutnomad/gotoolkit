@@ -26,6 +26,15 @@ type GormModelInfo struct {
 	Imports     []string        // 导入的包
 }
 
+// MethodInfo 表示方法信息
+type MethodInfo struct {
+	Name         string // 方法名
+	ReceiverName string // 接收器名称
+	ReceiverType string // 接收器类型
+	ReturnType   string // 返回类型
+	FilePath     string // 方法所在文件的绝对路径
+}
+
 // FieldInfo 表示结构体字段信息
 type FieldInfo struct {
 	Name       string // 字段名
@@ -37,10 +46,11 @@ type FieldInfo struct {
 
 // StructInfo 表示结构体信息
 type StructInfo struct {
-	Name        string      // 结构体名称
-	PackageName string      // 包名
-	Fields      []FieldInfo // 字段列表
-	Imports     []string    // 导入的包
+	Name        string       // 结构体名称
+	PackageName string       // 包名
+	Fields      []FieldInfo  // 字段列表
+	Methods     []MethodInfo // 方法列表
+	Imports     []string     // 导入的包
 }
 
 // ExtractColumnName 提取列名(从gorm标签或使用默认规则)

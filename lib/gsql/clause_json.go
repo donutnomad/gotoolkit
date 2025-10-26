@@ -3,6 +3,7 @@ package gsql
 import (
 	"github.com/donutnomad/gotoolkit/lib/gsql/field"
 	"github.com/samber/lo"
+	"gorm.io/datatypes"
 	"gorm.io/gorm/clause"
 )
 
@@ -120,4 +121,50 @@ func (e jsonTableClause) Build(builder clause.Builder) {
 	}
 	builder.WriteString(")")
 	builder.WriteString(")")
+}
+
+var _ clause.Expression = (*JSONSetExpression)(nil)
+
+// JSONSetExpression json set expression, implements clause.Expression interface to use as updater
+type JSONSetExpression struct {
+	datatypes.JSONSetExpression
+	length int
+	column string
+}
+
+// JSONSet update fields of json column
+func JSONSet(column string) *JSONSetExpression {
+	return &JSONSetExpression{
+		*datatypes.JSONSet(column),
+		0,
+		column,
+	}
+}
+
+// Set return clause.Expression.
+//
+//	{
+//		"age": 20,
+//		"name": "json-1",
+//		"orgs": {"orga": "orgv"},
+//		"tags": ["tag1", "tag2"]
+//	}
+//
+//	// In MySQL/SQLite, path is `age`, `name`, `orgs.orga`, `tags[0]`, `tags[1]`.
+//	DB.UpdateColumn("attr", JSONSet("attr").Set("orgs.orga", 42))
+//
+//	// In PostgreSQL, path is `{age}`, `{name}`, `{orgs,orga}`, `{tags, 0}`, `{tags, 1}`.
+//	DB.UpdateColumn("attr", JSONSet("attr").Set("{orgs, orga}", "bar"))
+func (jsonSet *JSONSetExpression) Set(path string, value interface{}) *JSONSetExpression {
+	jsonSet.JSONSetExpression.Set(path, value)
+	jsonSet.length++
+	return jsonSet
+}
+
+func (jsonSet *JSONSetExpression) Column() string {
+	return jsonSet.column
+}
+
+func (jsonSet *JSONSetExpression) Len() int {
+	return jsonSet.length
 }

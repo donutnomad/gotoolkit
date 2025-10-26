@@ -106,7 +106,7 @@ func (cg *CodeGenerator) generatePatchCall(builder *strings.Builder) {
 
 // generateResultInit 生成初始化返回值的代码
 func (cg *CodeGenerator) generateResultInit(builder *strings.Builder) {
-	builder.WriteString("\tvar ret = make(map[string]any)\n")
+	builder.WriteString(fmt.Sprintf("\tvalues := make(map[string]any, %d)\n", len(slices.Collect(cg.result.BType.FieldIter()))))
 }
 
 func writeField(sb *strings.Builder, aField string, bFields []string, bField2Column map[string]*FieldInfo, comment string) {
@@ -116,7 +116,7 @@ func writeField(sb *strings.Builder, aField string, bFields []string, bField2Col
 	sb.WriteString(fmt.Sprintf("\tif fields.%s.IsPresent() {\n", aField))
 	// 生成多个字段的赋值
 	for _, bField := range bFields {
-		sb.WriteString(fmt.Sprintf("\t\tret[\"%s\"] = b.%s\n", bField2Column[bField].GetColumnName(), bField))
+		sb.WriteString(fmt.Sprintf("\t\tvalues[\"%s\"] = b.%s\n", bField2Column[bField].GetColumnName(), bField))
 	}
 	sb.WriteString("\t}\n")
 }
@@ -126,12 +126,12 @@ func writeField2(sb *strings.Builder, aField string, bFieldName, bColumnName str
 		sb.WriteString(comment)
 	}
 	sb.WriteString(fmt.Sprintf("\tif fields.%s.IsPresent() {\n", aField))
-	sb.WriteString(fmt.Sprintf("\t\tret[\"%s\"] = b.%s\n", bColumnName, bFieldName))
+	sb.WriteString(fmt.Sprintf("\t\tvalues[\"%s\"] = b.%s\n", bColumnName, bFieldName))
 	sb.WriteString("\t}\n")
 }
 
 func writeField3(sb *strings.Builder,
-	aField string, bColumnName string,
+	aField string,
 	jsonTagName, bFieldPath string,
 	comments ...string,
 ) {
@@ -139,7 +139,7 @@ func writeField3(sb *strings.Builder,
 		sb.WriteString(comment)
 	}
 	sb.WriteString(fmt.Sprintf("\tif fields.%s.IsPresent() {\n", aField))
-	sb.WriteString(fmt.Sprintf("\t\tret[\"%s\"] = set.Set(\"%s\", b.%s)\n", bColumnName, jsonTagName, bFieldPath))
+	sb.WriteString(fmt.Sprintf("\t\tset.Set(\"%s\", %s)\n", jsonTagName, bFieldPath))
 	sb.WriteString("\t}\n")
 }
 
@@ -153,6 +153,7 @@ func (cg *CodeGenerator) generateFieldMappings(builder *strings.Builder) {
 	}
 
 	// B作为主导
+	var used = make(map[string]bool)
 OUT:
 	for _, bField := range bFieldNames {
 		for a, b := range cg.result.FieldMapping.OneToOne {
@@ -162,8 +163,9 @@ OUT:
 			}
 		}
 		for a, bs := range cg.result.FieldMapping.OneToMany {
-			if lo.Contains(bs, bField) {
-				writeField(builder, a, bs, bField2Column, "// 1对多")
+			if !used[a] && lo.Contains(bs, bField) {
+				used[a] = true
+				writeField(builder, a, bs, bField2Column, "// One To Many\n")
 				continue OUT
 			}
 		}
@@ -255,9 +257,10 @@ OUT:
 				nestedMapping[k] = append(nestedMapping[k], tmpT{bFieldPath, aField})
 			}
 
-			builder.WriteString(fmt.Sprintf("\t// B.%s字段对应A的多字段\n", bFieldName))
+			builder.WriteString(fmt.Sprintf("\t// B.%s\n", bFieldName))
 			builder.WriteString("\t{\n")
-			builder.WriteString(fmt.Sprintf("\tset := datatypes.JSONSet(\"%s\")\n", bColumnName))
+			builder.WriteString(fmt.Sprintf("\tset := gsql.JSONSet(\"%s\")\n", bColumnName))
+			builder.WriteString(fmt.Sprintf("\tfield := b.%s.Data()\n", bFieldName))
 
 			keys := slices.Collect(maps.Keys(nestedMapping))
 			sort.Strings(keys)
@@ -265,18 +268,21 @@ OUT:
 			for _, k := range keys {
 				if k != normalKey {
 					builder.WriteString(fmt.Sprintf("// %s\n", k))
-					builder.WriteString("\t{\n")
+					//builder.WriteString("\t{\n")
 				}
 				for _, tmp := range nestedMapping[k] {
-					writeField3(builder, tmp.aField, bColumnName,
+					writeField3(builder, tmp.aField,
 						cg.getJsonName(thisTypeInfo, tmp.bFieldPath),
-						fmt.Sprintf("%s.Data().%s", bFieldName, tmp.bFieldPath),
+						fmt.Sprintf("field.%s", tmp.bFieldPath),
 					)
 				}
-				if k != normalKey {
-					builder.WriteString("\t}\n")
-				}
+				//if k != normalKey {
+				//	builder.WriteString("\t}\n")
+				//}
 			}
+			builder.WriteString("\tif set.Len() > 0 {\n")
+			builder.WriteString(fmt.Sprintf("\tvalues[\"%s\"] = set\n", bColumnName))
+			builder.WriteString("\t}\n")
 			builder.WriteString("\t}")
 		}
 	}
@@ -289,12 +295,17 @@ func (cg *CodeGenerator) getJsonName(thisTypeInfo *TypeInfo, path string) (resul
 				return &f
 			}
 		}
-		panic(fmt.Sprintf("cannot get json name %s", n))
+		panic(fmt.Sprintf("cannot get json name %s from type %s", n, typeInfo.FullName))
 	}
 	var myTypeInfo = thisTypeInfo
 	parts := strings.Split(path, ".")
 	if len(parts) == 1 {
 		return getF(myTypeInfo, path).GetJsonName()
+	}
+	// 使用当前类型的文件路径来解析import
+	currentResolveFile := myTypeInfo.FilePath
+	if currentResolveFile == "" {
+		currentResolveFile = cg.typeResolver.currentFile
 	}
 	for i, part := range parts {
 		jn := getF(myTypeInfo, part)
@@ -303,9 +314,18 @@ func (cg *CodeGenerator) getJsonName(thisTypeInfo *TypeInfo, path string) (resul
 			continue
 		}
 		myTypeInfo = NewTypeInfoFromName(jn.GetFullType())
-		err := cg.typeResolver.ResolveTypeCurrent(myTypeInfo)
+		// 使用字段定义所在文件的路径来解析类型，而不是当前文件路径
+		resolveFile := currentResolveFile
+		if resolveFile == "" {
+			resolveFile = cg.typeResolver.currentFile
+		}
+		err := cg.typeResolver.ResolveType(myTypeInfo, resolveFile)
 		if err != nil {
-			panic(fmt.Sprintf("cannot resolveType %s", part))
+			panic(fmt.Sprintf("cannot resolveType %s %s: %v", part, jn.GetFullType(), err))
+		}
+		// 更新下一次解析使用的文件路径
+		if myTypeInfo.FilePath != "" {
+			currentResolveFile = myTypeInfo.FilePath
 		}
 		result += jn.GetJsonName() + "."
 	}
@@ -314,7 +334,7 @@ func (cg *CodeGenerator) getJsonName(thisTypeInfo *TypeInfo, path string) (resul
 
 // generateReturnStatement 生成返回语句
 func (cg *CodeGenerator) generateReturnStatement(builder *strings.Builder) {
-	builder.WriteString("\t\nreturn ret\n")
+	builder.WriteString("\treturn values\n")
 	builder.WriteString("}\n") // 函数结束括号
 }
 
@@ -365,7 +385,7 @@ func (cg *CodeGenerator) GenerateImports(result *ParseResult) []string {
 }
 
 // GenerateFullCode 生成完整的代码（包含导入）
-func (cg *CodeGenerator) GenerateFullCode(result *ParseResult) string {
+func (cg *CodeGenerator) GenerateFullCode(result *ParseResult) (string, string) {
 	imports := cg.GenerateImports(result)
 	generatedCode := cg.Generate(result)
 
@@ -380,10 +400,7 @@ func (cg *CodeGenerator) GenerateFullCode(result *ParseResult) string {
 		builder.WriteString(")\n\n")
 	}
 
-	// 生成生成的代码
-	builder.WriteString(generatedCode)
-
-	return builder.String()
+	return builder.String(), generatedCode
 }
 
 // validateFieldCoverage 验证字段覆盖情况
@@ -391,15 +408,15 @@ func (cg *CodeGenerator) validateFieldCoverage(generatedCode string) error {
 	// 收集所有被赋值的数据库字段名
 	assignedFields := make(map[string]bool)
 
-	// 查找所有的 ret["字段名"] 赋值
+	// 查找所有的 values["字段名"] 赋值
 	lines := strings.Split(generatedCode, "\n")
 
 	for _, line := range lines {
-		// 简单的字符串匹配来查找 ret["字段名"] 模式
-		if strings.Contains(line, "ret[") && strings.Contains(line, "] =") {
+		// 简单的字符串匹配来查找 values["字段名"] 模式
+		if strings.Contains(line, "values[") && strings.Contains(line, "] =") {
 			// 提取字段名
-			start := strings.Index(line, `ret["`) + 5
-			if start > 4 { // 确保找到了 ret["
+			start := strings.Index(line, `values["`) + 8
+			if start > 7 { // 确保找到了 values["
 				end := strings.Index(line[start:], `"]`)
 				if end > 0 {
 					fieldName := line[start : start+end]
@@ -424,6 +441,7 @@ func (cg *CodeGenerator) validateFieldCoverage(generatedCode string) error {
 		}
 	}
 
+	sort.Strings(missingFields)
 	if len(missingFields) > 0 {
 		return fmt.Errorf("Missing fields: %v", strings.Join(missingFields, ", "))
 	}

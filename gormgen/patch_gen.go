@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/donutnomad/gotoolkit/automap"
 	"github.com/donutnomad/gotoolkit/internal/gormparse"
 	"github.com/donutnomad/gotoolkit/internal/utils"
 )
@@ -13,15 +14,28 @@ var name = "gormgen"
 type GormModelInfo = gormparse.GormModelInfo
 
 // GenPatch 生成多个结构体的GORM Patch文件
-func GenPatch(filename string, gormModels []*GormModelInfo) error {
+func GenPatch(filename string, gormModels []*GormModelInfo, mapperMethod [][2]string) error {
 	if len(gormModels) == 0 {
 		return fmt.Errorf("没有模型需要生成")
 	}
 	g := PatchGen{}
 	var sb strings.Builder
 	g.GenPkg(&sb, gormModels)
-	g.GenImports(&sb, gormModels)
-	g.GenBody(&sb, gormModels)
+	if *patch {
+		g.GenImports(&sb, gormModels)
+		g.GenBody(&sb, gormModels)
+	} else if *patch2 {
+		sb.WriteString("\n// ============ Patch ============\n\n")
+		for _, item := range mapperMethod {
+			_, code, err := automap.Generate(item[0], "ToPatch", automap.WithFileContext(item[1]))
+			if err != nil {
+				panic("\"生成patch.ToPatch代码失败: %v\", err")
+			}
+			sb.WriteString(code)
+			sb.WriteString("\n")
+		}
+	}
+
 	return utils.WriteFormat(filename, []byte(sb.String()))
 }
 

@@ -339,7 +339,29 @@ func WithFileContext(filePath string) Option {
 }
 
 // ParseAndGenerate 解析并生成完整代码（包含导入）
-func (am *AutoMap) ParseAndGenerate(funcName string, options ...Option) (string, error) {
+func (am *AutoMap) ParseAndGenerate(funcName string, options ...Option) (string, string, error) {
+	var callerFile string
+
+	// 应用选项
+	for _, option := range options {
+		callerFile = option(am, callerFile)
+	}
+
+	// 如果没有指定文件上下文，使用默认方式获取
+	if callerFile == "" {
+		callerFile = am.getCallerFile()
+	}
+
+	result, err := am.Parse(funcName, callerFile)
+	if err != nil {
+		return "", "", err
+	}
+
+	i, b := am.codeGenerator.GenerateFullCode(result)
+	return i, b, nil
+}
+
+func (am *AutoMap) GenImports(funcName string, options ...Option) (string, error) {
 	var callerFile string
 
 	// 应用选项
@@ -357,7 +379,20 @@ func (am *AutoMap) ParseAndGenerate(funcName string, options ...Option) (string,
 		return "", err
 	}
 
-	return am.codeGenerator.GenerateFullCode(result), nil
+	imports := am.codeGenerator.GenerateImports(result)
+
+	var builder strings.Builder
+
+	// 生成导入语句
+	if len(imports) > 0 {
+		builder.WriteString("import (\n")
+		for _, imp := range imports {
+			builder.WriteString(fmt.Sprintf("\t\"%s\"\n", imp))
+		}
+		builder.WriteString(")\n\n")
+	}
+
+	return builder.String(), nil
 }
 
 // ValidateFunction 验证函数是否符合要求
@@ -385,6 +420,15 @@ func ParseWithOptions(funcName string, options ...Option) (*ParseResult, error) 
 
 // ParseAndGenerate 解析并生成完整代码（使用默认实例）
 func ParseAndGenerate(funcName string, genFuncName string, options ...Option) (string, error) {
+	defaultAutoMap.codeGenerator.genFuncName = genFuncName
+	i, b, err := defaultAutoMap.ParseAndGenerate(funcName, options...)
+	if err != nil {
+		return "", err
+	}
+	return i + b, nil
+}
+
+func Generate(funcName string, genFuncName string, options ...Option) (string, string, error) {
 	defaultAutoMap.codeGenerator.genFuncName = genFuncName
 	return defaultAutoMap.ParseAndGenerate(funcName, options...)
 }

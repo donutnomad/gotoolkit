@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/donutnomad/gotoolkit/automap"
 	"github.com/donutnomad/gotoolkit/internal/gormparse"
 	"github.com/donutnomad/gotoolkit/internal/utils"
 )
@@ -24,7 +25,7 @@ func GenQuery(filename string, models []*gormparse.GormModelInfo) error {
 }
 
 // genQueryAndPatch 生成包含query和patch的合并文件
-func genQueryAndPatch(filename string, models []*gormparse.GormModelInfo) error {
+func genQueryAndPatch(filename string, models []*gormparse.GormModelInfo, mapperMethod [][2]string) error {
 	if len(models) == 0 {
 		return fmt.Errorf("[gormgen] 没有模型需要生成")
 	}
@@ -36,11 +37,25 @@ func genQueryAndPatch(filename string, models []*gormparse.GormModelInfo) error 
 	g.GenPkg(&sb, models)
 
 	g.GenImports(&sb, models)
-	g2.GenImports(&sb, models)
+	if *patch {
+		g2.GenImports(&sb, models)
+	}
 
 	g.GenBody(&sb, models)
-	sb.WriteString("\n// ============ Patch Structures ============\n\n")
-	g2.GenBody(&sb, models)
+	if *patch {
+		sb.WriteString("\n// ============ Patch Structures ============\n\n")
+		g2.GenBody(&sb, models)
+	} else if *patch2 {
+		sb.WriteString("\n// ============ Patch ============\n\n")
+		for _, item := range mapperMethod {
+			_, code, err := automap.Generate(item[0], "ToPatch", automap.WithFileContext(item[1]))
+			if err != nil {
+				panic("\"生成patch.ToPatch代码失败: %v\", err")
+			}
+			sb.WriteString(code)
+			sb.WriteString("\n")
+		}
+	}
 
 	return utils.WriteFormat(filename, []byte(sb.String()))
 }

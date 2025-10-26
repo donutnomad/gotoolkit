@@ -10,18 +10,37 @@ import (
 
 	"github.com/donutnomad/gotoolkit/internal/gormparse"
 	"github.com/donutnomad/gotoolkit/internal/structparse"
+	"github.com/samber/lo"
 )
 
+type MapFunc struct {
+	StructName   string
+	FunctionName string
+}
+
+var dir = flag.String("dir", ".", "目录路径")
+var structNames = flag.String("struct", "", "结构体名称,多个使用逗号分隔")
+var prefix = flag.String("prefix", "", "生成的结构体前缀")
+var outputDir = flag.String("out", "", "输出目录路径,支持$PROJECT_ROOT变量")
+var patch = flag.Bool("patch", false, "生成GORM Patch结构体和Build方法")
+var one = flag.Bool("one", false, "将query和patch代码生成到同一个文件中")
+var outputFile = flag.String("o", "", "指定输出文件名,所有内容输出到此文件(不按文件分组)")
+var patch2 = flag.Bool("patch2", false, "生成GORM Patch2")
+var mapper = flag.String("mapper", "", "struct1.ToXXX,struct2.ToXXX2")
+
 func main() {
-	var dir = flag.String("dir", ".", "目录路径")
-	var structNames = flag.String("struct", "", "结构体名称,多个使用逗号分隔")
-	var prefix = flag.String("prefix", "", "生成的结构体前缀")
-	var outputDir = flag.String("out", "", "输出目录路径,支持$PROJECT_ROOT变量")
-	var patch = flag.Bool("patch", false, "生成GORM Patch结构体和Build方法")
-	var one = flag.Bool("one", false, "将query和patch代码生成到同一个文件中")
-	var outputFile = flag.String("o", "", "指定输出文件名,所有内容输出到此文件(不按文件分组)")
-	var patch2 = flag.Bool("patch2", false, "生成GORM Patch2")
 	flag.Parse()
+
+	var mapFuncs []MapFunc
+	if *patch2 && len(*mapper) > 0 {
+		mapFuncs = lo.Map(strings.Split(*mapper, ","), func(item string, index int) MapFunc {
+			items := strings.Split(item, ".")
+			return MapFunc{
+				StructName:   items[0],
+				FunctionName: items[1],
+			}
+		})
+	}
 
 	var isPatch = func() bool {
 		return *patch || *patch2
@@ -49,7 +68,8 @@ func main() {
 
 	// 按照文件分组收集模型
 	fileModelsMap := make(map[string][]*gormparse.GormModelInfo)
-	fileOrderList := []string{} // 保持文件顺序
+	var fileOrderList []string // 保持文件顺序
+	var mapperMethod [][2]string
 
 	// 处理每个结构体
 	for _, structName := range structList {
@@ -94,6 +114,8 @@ func main() {
 			Name:        structInfo.Name,
 			PackageName: structInfo.PackageName,
 			Imports:     structInfo.Imports,
+			Fields:      make([]gormparse.FieldInfo, 0, len(structInfo.Fields)),
+			Methods:     make([]gormparse.MethodInfo, 0, len(structInfo.Methods)),
 		}
 		for _, f := range structInfo.Fields {
 			si.Fields = append(si.Fields, gormparse.FieldInfo{
@@ -103,6 +125,40 @@ func main() {
 				Tag:        f.Tag,
 				SourceType: f.SourceType,
 			})
+		}
+		// 复制方法信息
+		for _, m := range structInfo.Methods {
+			si.Methods = append(si.Methods, gormparse.MethodInfo{
+				Name:         m.Name,
+				ReceiverName: m.ReceiverName,
+				ReceiverType: m.ReceiverType,
+				ReturnType:   m.ReturnType,
+				FilePath:     m.FilePath,
+			})
+		}
+		if *patch2 {
+			if len(mapFuncs) == 0 {
+				method, ok := lo.Find(si.Methods, func(item gormparse.MethodInfo) bool {
+					return item.Name == "ToPO"
+				})
+				if !ok {
+					log.Fatal("[gormgen] 使用-patch2的时候，请指定-mapper xxx.XXXX 或者使用ToPO作为函数名")
+				}
+				mapperMethod = append(mapperMethod, [2]string{fmt.Sprintf("%s.%s", trimPtr(method.ReceiverType), method.Name), method.FilePath})
+			} else {
+				f, ok := lo.Find(mapFuncs, func(item MapFunc) bool {
+					return item.StructName == trimPtr(si.Name)
+				})
+				if ok {
+					method, ok := lo.Find(si.Methods, func(item gormparse.MethodInfo) bool {
+						return item.Name == f.FunctionName
+					})
+					if !ok {
+						log.Fatalf("[gormgen] 没有找到mapper方法: %s %s", f.StructName, f.FunctionName)
+					}
+					mapperMethod = append(mapperMethod, [2]string{fmt.Sprintf("%s.%s", trimPtr(method.ReceiverType), method.Name), method.FilePath})
+				}
+			}
 		}
 
 		gormModel := gormparse.ParseGormModel(si)
@@ -123,7 +179,7 @@ func main() {
 		for _, targetFile := range fileOrderList {
 			allModels = append(allModels, fileModelsMap[targetFile]...)
 		}
-		do(one, isPatch, *outputFile, allModels, 3)
+		do(one, isPatch, *outputFile, allModels, 3, mapperMethod)
 	} else {
 		// 按文件分组生成
 		for _, targetFile := range fileOrderList {
@@ -140,16 +196,24 @@ func main() {
 				queryFile = strings.TrimSuffix(targetFile, ".go") + "_query.go"
 			}
 
-			do(one, isPatch, queryFile, models, 9)
+			do(one, isPatch, queryFile, models, 9, mapperMethod)
 		}
 	}
 }
 
-func do(one *bool, isPatch func() bool, queryFile string, models []*gormparse.GormModelInfo, end int) {
+func trimPtr(input string) string {
+	return strings.TrimPrefix(input, "*")
+}
+
+func do(one *bool, isPatch func() bool, queryFile string, models []*gormparse.GormModelInfo, end int, mapperMethod [][2]string) {
+	if isPatch() && len(mapperMethod) == 0 {
+		panic("[gormgen] 使用-patch2的时候，请指定-mapper xxx.XXXX 或者使用ToPO作为函数名")
+	}
+
 	// 检查是否合并到一个文件
 	if *one && isPatch() {
 		// query和patch合并到一个文件
-		err := genQueryAndPatch(queryFile, models)
+		err := genQueryAndPatch(queryFile, models, mapperMethod)
 		if err != nil {
 			log.Fatalf("[gormgen] 生成合并文件失败: %v", err)
 		}
@@ -165,7 +229,7 @@ func do(one *bool, isPatch func() bool, queryFile string, models []*gormparse.Go
 		// 生成patch文件
 		if isPatch() {
 			patchFile := queryFile[:len(queryFile)-end] + "_patch.go"
-			err := GenPatch(patchFile, models)
+			err := GenPatch(patchFile, models, mapperMethod)
 			if err != nil {
 				log.Fatalf("[gormgen] 生成GORM patch文件失败: %v", err)
 			}

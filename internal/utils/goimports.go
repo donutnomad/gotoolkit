@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"fmt"
 	"os"
 
 	"golang.org/x/tools/imports"
@@ -16,6 +17,7 @@ func WriteFormat(fileName string, src []byte) error {
 		FormatOnly: false,
 	})
 	if err != nil {
+		fmt.Println("format file failed:", string(src))
 		return err
 	}
 	// 输出到文件中
