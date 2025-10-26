@@ -3,6 +3,8 @@ package automap
 import (
 	"fmt"
 	"strings"
+
+	"github.com/samber/lo"
 )
 
 // CodeGenerator 代码生成器
@@ -33,7 +35,16 @@ func (cg *CodeGenerator) Generate(result *ParseResult) string {
 	// 生成返回语句
 	cg.generateReturnStatement(&builder)
 
-	return builder.String()
+	generatedCode := builder.String()
+
+	// 验证字段覆盖情况
+	if err := cg.validateFieldCoverage(generatedCode); err != nil {
+		// 在生成的代码前添加错误注释
+		errorMsg := fmt.Sprintf("// 错误: %s\n\n", err.Error())
+		return errorMsg + generatedCode
+	}
+
+	return generatedCode
 }
 
 // generateFunctionSignature 生成函数签名
@@ -198,61 +209,98 @@ func (cg *CodeGenerator) generateJSONFieldMappings(builder *strings.Builder) {
 				builder.WriteString("\t}\n")
 			}
 		} else {
-			// 复杂类型的JSON字段，使用JSONSet
-			// 添加注释
-			builder.WriteString(fmt.Sprintf("\t// B.%s字段对应A的多字段\n", bFieldName))
-			builder.WriteString("\t{\n")
-
-			// 获取JSON字段在数据库中的列名（使用B类型字段的ColumnName）
-			jsonColumnName := cg.getBFieldColumnKey(bFieldName)
-			if jsonColumnName == "" {
-				jsonColumnName = jsonMapping.FieldName
+			// 检查是否为JSONSlice类型
+			if cg.isJSONSliceField(bFieldName) {
+				// JSONSlice字段作为整体直接赋值
+				jsonColumnName := cg.getBFieldColumnKey(bFieldName)
 				if jsonColumnName == "" {
 					jsonColumnName = cg.toSnakeCase(bFieldName)
 				}
-			}
 
-			// 分析嵌套字段结构
-			nestedFields := cg.analyzeNestedFields(jsonMapping.SubFields)
-
-			// 生成简单字段的映射
-			if len(nestedFields.SimpleFields) > 0 {
-				builder.WriteString(fmt.Sprintf("\t\tset := datatypes.JSONSet(\"%s\")\n", jsonColumnName))
-
-				for aField, jsonSubField := range nestedFields.SimpleFields {
-					jsonFieldValue := cg.buildJSONFieldValue(bFieldName, jsonSubField)
-					builder.WriteString(fmt.Sprintf("\t\tif fields.%s.IsPresent() {\n", aField))
-					builder.WriteString(fmt.Sprintf("\t\t\tret[\"%s\"] = set.Set(\"%s\", %s)\n",
-						jsonColumnName, jsonSubField, jsonFieldValue))
-					builder.WriteString("\t\t}\n")
-				}
-			}
-
-			// 生成嵌套字段的映射 - 拆分为单独的JSON字段设置，并按嵌套对象分组
-			for nestedField, subFieldMapping := range nestedFields.NestedFields {
-				if len(subFieldMapping) > 0 {
-					// 添加分组注释
-					builder.WriteString(fmt.Sprintf("\t\t// %s 字段组\n", nestedField))
-					builder.WriteString("\t\t{\n")
-
-					for aField, jsonSubField := range subFieldMapping {
-						// 构建完整的JSON字段路径，如 "support_resource.other_docs"
-						fullJSONField := fmt.Sprintf("%s.%s", cg.toSnakeCase(nestedField), cg.toSnakeCase(jsonSubField))
-
-						// 构建字段值访问路径，如 b.Attribute.Data().SupportResource.OtherDocs
-						fieldValue := fmt.Sprintf("b.%s.Data().%s.%s", bFieldName, nestedField, jsonSubField)
-
-						builder.WriteString(fmt.Sprintf("\t\t\tif fields.%s.IsPresent() {\n", aField))
-						builder.WriteString(fmt.Sprintf("\t\t\t\tret[\"%s\"] = set.Set(\"%s\", %s)\n",
-							jsonColumnName, fullJSONField, fieldValue))
-						builder.WriteString("\t\t\t}\n")
+				// 找到对应的A字段名
+				var aFieldName string
+				for relName, relBFields := range cg.result.FieldMapping.OneToMany {
+					for _, bf := range relBFields {
+						if bf == bFieldName {
+							aFieldName = relName
+							break
+						}
 					}
-
-					builder.WriteString("\t\t}\n")
 				}
-			}
+				if aFieldName == "" {
+					// 如果找不到，尝试从OrderedRelations中查找
+					for _, rel := range cg.result.FieldMapping.OrderedRelations {
+						for _, bf := range rel.BFields {
+							if bf == bFieldName {
+								aFieldName = rel.AField
+								break
+							}
+						}
+					}
+				}
 
-			builder.WriteString("\t}")
+				if aFieldName != "" {
+					builder.WriteString(fmt.Sprintf("\tif fields.%s.IsPresent() {\n", aFieldName))
+					builder.WriteString(fmt.Sprintf("\t\tret[\"%s\"] = b.%s\n", jsonColumnName, bFieldName))
+					builder.WriteString("\t}\n")
+				}
+			} else {
+				// JSONType复杂字段，使用JSONSet
+				// 添加注释
+				builder.WriteString(fmt.Sprintf("\t// B.%s字段对应A的多字段\n", bFieldName))
+				builder.WriteString("\t{\n")
+
+				// 获取JSON字段在数据库中的列名（使用B类型字段的ColumnName）
+				jsonColumnName := cg.getBFieldColumnKey(bFieldName)
+				if jsonColumnName == "" {
+					jsonColumnName = jsonMapping.FieldName
+					if jsonColumnName == "" {
+						jsonColumnName = cg.toSnakeCase(bFieldName)
+					}
+				}
+
+				// 分析嵌套字段结构
+				nestedFields := cg.analyzeNestedFields(jsonMapping.SubFields)
+
+				// 生成简单字段的映射
+				if len(nestedFields.SimpleFields) > 0 {
+					builder.WriteString(fmt.Sprintf("\t\tset := datatypes.JSONSet(\"%s\")\n", jsonColumnName))
+
+					for aField, jsonSubField := range nestedFields.SimpleFields {
+						jsonFieldValue := cg.buildJSONFieldValue(bFieldName, jsonSubField)
+						builder.WriteString(fmt.Sprintf("\t\tif fields.%s.IsPresent() {\n", aField))
+						builder.WriteString(fmt.Sprintf("\t\t\tret[\"%s\"] = set.Set(\"%s\", %s)\n",
+							jsonColumnName, jsonSubField, jsonFieldValue))
+						builder.WriteString("\t\t}\n")
+					}
+				}
+
+				// 生成嵌套字段的映射 - 拆分为单独的JSON字段设置，并按嵌套对象分组
+				for nestedField, subFieldMapping := range nestedFields.NestedFields {
+					if len(subFieldMapping) > 0 {
+						// 添加分组注释
+						builder.WriteString(fmt.Sprintf("\t\t// %s 字段组\n", nestedField))
+						builder.WriteString("\t\t{\n")
+
+						for aField, jsonSubField := range subFieldMapping {
+							// 构建完整的JSON字段路径，如 "support_resource.other_docs"
+							fullJSONField := fmt.Sprintf("%s.%s", cg.toSnakeCase(nestedField), cg.toSnakeCase(jsonSubField))
+
+							// 构建字段值访问路径，如 b.Attribute.Data().SupportResource.OtherDocs
+							fieldValue := fmt.Sprintf("b.%s.Data().%s.%s", bFieldName, nestedField, jsonSubField)
+
+							builder.WriteString(fmt.Sprintf("\t\t\tif fields.%s.IsPresent() {\n", aField))
+							builder.WriteString(fmt.Sprintf("\t\t\t\tret[\"%s\"] = set.Set(\"%s\", %s)\n",
+								jsonColumnName, fullJSONField, fieldValue))
+							builder.WriteString("\t\t\t}\n")
+						}
+
+						builder.WriteString("\t\t}\n")
+					}
+				}
+
+				builder.WriteString("\t}")
+			}
 		}
 	}
 }
@@ -502,6 +550,18 @@ func (cg *CodeGenerator) getNestedType(nestedField string) string {
 	}
 }
 
+// isJSONSliceField 检查字段是否为JSONSlice类型
+func (cg *CodeGenerator) isJSONSliceField(fieldName string) bool {
+	// 在B类型中查找字段
+	for _, field := range cg.result.BType.Fields {
+		if field.Name == fieldName {
+			// 检查字段类型是否包含JSONSlice
+			return strings.Contains(field.Type, "JSONSlice")
+		}
+	}
+	return false
+}
+
 // GenerateImports 生成需要的导入语句
 func (cg *CodeGenerator) GenerateImports(result *ParseResult) []string {
 	imports := make(map[string]bool)
@@ -554,4 +614,116 @@ func (cg *CodeGenerator) ValidateGeneratedCode(code string) error {
 	// TODO: 实现生成代码的验证逻辑
 	// 可以使用go/parser解析生成的代码，检查语法是否正确
 	return nil
+}
+
+// validateFieldCoverage 验证字段覆盖情况
+func (cg *CodeGenerator) validateFieldCoverage(generatedCode string) error {
+	// 收集所有被赋值的数据库字段名
+	assignedFields := make(map[string]bool)
+
+	// 查找所有的 ret["字段名"] 赋值
+	lines := strings.Split(generatedCode, "\n")
+
+	for _, line := range lines {
+		// 简单的字符串匹配来查找 ret["字段名"] 模式
+		if strings.Contains(line, "ret[") && strings.Contains(line, "] =") {
+			// 提取字段名
+			start := strings.Index(line, `ret["`) + 5
+			if start > 4 { // 确保找到了 ret["
+				end := strings.Index(line[start:], `"]`)
+				if end > 0 {
+					fieldName := line[start : start+end]
+					assignedFields[fieldName] = true
+				}
+			}
+		}
+	}
+
+	// 获取应该在patch中检查的B类型字段名（只检查A类型patch中存在的字段对应的B字段）
+	expectedFields := cg.getExpectedPatchFields()
+
+	// 检查哪些字段缺失
+	var missingFields []string
+	for _, expectedField := range expectedFields {
+		if !assignedFields[expectedField] {
+			missingFields = append(missingFields, expectedField)
+		}
+	}
+
+	if len(missingFields) > 0 {
+		return fmt.Errorf("以下B类型字段没有被赋值: %v", missingFields)
+	}
+
+	return nil
+}
+
+// getExpectedPatchFields 获取应该在patch中检查的B类型字段名
+func (cg *CodeGenerator) getExpectedPatchFields() []string {
+	var fieldName []string
+	for _, item := range cg.result.BType.Fields {
+		if item.IsEmbedded {
+			//TODO:嵌入类型,之后处理
+			continue
+		}
+		fieldName = append(fieldName, item.ColumnName)
+	}
+	return lo.Uniq(fieldName)
+}
+
+// getBTypeDatabaseFields 获取B类型的所有数据库字段名
+func (cg *CodeGenerator) getBTypeDatabaseFields() []string {
+	var fields []string
+
+	// 遍历B类型的所有字段
+	for _, field := range cg.result.BType.Fields {
+		if field.IsEmbedded {
+			// 处理嵌入字段（如 Model）
+			embeddedFields := cg.getEmbeddedDatabaseFields(field.Type)
+			fields = append(fields, embeddedFields...)
+		} else if field.IsJSONType {
+			// JSON字段使用其列名
+			if field.ColumnName != "" {
+				fields = append(fields, field.ColumnName)
+			} else {
+				fields = append(fields, cg.toSnakeCase(field.Name))
+			}
+		} else {
+			// 普通字段使用其列名
+			if field.ColumnName != "" {
+				fields = append(fields, field.ColumnName)
+			} else {
+				fields = append(fields, cg.toSnakeCase(field.Name))
+			}
+		}
+	}
+
+	return fields
+}
+
+// getEmbeddedDatabaseFields 获取嵌入结构体的数据库字段名
+func (cg *CodeGenerator) getEmbeddedDatabaseFields(embeddedType string) []string {
+	var fields []string
+
+	// 处理常见的嵌入类型
+	if embeddedType == "Model" || embeddedType == "orm.Model" {
+		// orm.Model 的标准字段
+		fields = append(fields, "id", "created_at", "updated_at", "deleted_at")
+	} else {
+		// 对于其他嵌入类型，尝试解析
+		if cg.typeResolver != nil {
+			typeInfo := &TypeInfo{Name: embeddedType}
+			err := cg.typeResolver.ResolveType(typeInfo, ".")
+			if err == nil {
+				for _, field := range typeInfo.Fields {
+					if field.ColumnName != "" {
+						fields = append(fields, field.ColumnName)
+					} else {
+						fields = append(fields, cg.toSnakeCase(field.Name))
+					}
+				}
+			}
+		}
+	}
+
+	return fields
 }

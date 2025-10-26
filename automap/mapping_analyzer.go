@@ -282,6 +282,19 @@ func (ma *MappingAnalyzer) extractAFieldsFromExpr(expr ast.Expr) []string {
 			fields = append(fields, aFields...)
 		}
 
+	case *ast.StarExpr:
+		// 处理解引用操作，如 *entity.TokenMaxSupply
+		aFields := ma.extractAFieldsFromExpr(e.X)
+		fields = append(fields, aFields...)
+
+	case *ast.UnaryExpr:
+		// 处理其他一元操作，如 &entity
+		if e.Op == token.AND { // & 操作符
+			// 处理取地址操作，递归处理操作数
+			aFields := ma.extractAFieldsFromExpr(e.X)
+			fields = append(fields, aFields...)
+		}
+
 	default:
 		// 其他表达式类型
 	}
@@ -313,6 +326,26 @@ func (ma *MappingAnalyzer) buildFieldPath(expr ast.Expr) string {
 			return ""
 		}
 		return e.Name
+
+	case *ast.CallExpr:
+		// 处理函数调用，如 lo.Map(entity.ExchangeRules, ...)
+		if len(e.Args) > 0 {
+			// 递归处理第一个参数，通常是我们需要的字段
+			return ma.buildFieldPath(e.Args[0])
+		}
+		return ""
+
+	case *ast.StarExpr:
+		// 处理解引用操作，如 *entity.TokenMaxSupply
+		return ma.buildFieldPath(e.X)
+
+	case *ast.UnaryExpr:
+		// 处理取地址操作，如 &entity
+		if e.Op == token.AND {
+			// 递归处理操作数
+			return ma.buildFieldPath(e.X)
+		}
+		return ""
 
 	default:
 		return ""
@@ -775,39 +808,4 @@ func (ma *MappingAnalyzer) toSnakeCase(s string) string {
 		result = append(result, unicode.ToLower(r))
 	}
 	return string(result)
-}
-
-// GetBFieldKey 获取B字段的键名（考虑GORM标签）
-func (ma *MappingAnalyzer) GetBFieldKey(fieldName string) string {
-	// 处理嵌入字段（如 Base.ID）
-	if dotIndex := strings.Index(fieldName, "."); dotIndex != -1 {
-		embeddedFieldName := fieldName[:dotIndex]
-		subFieldName := fieldName[dotIndex+1:]
-
-		// 对于Base嵌入字段，直接返回子字段名的snake_case
-		if embeddedFieldName == "Base" {
-			return ma.toSnakeCase(subFieldName)
-		}
-
-		// 查找嵌入字段
-		for _, field := range ma.bType.Fields {
-			if field.IsEmbedded && (field.Name == embeddedFieldName || field.Type == embeddedFieldName) {
-				// 返回子字段名的snake_case
-				return ma.toSnakeCase(subFieldName)
-			}
-		}
-	}
-
-	// 在B类型中查找字段
-	for _, field := range ma.bType.Fields {
-		if field.Name == fieldName {
-			if field.ColumnName != "" {
-				return field.ColumnName
-			}
-			return ma.toSnakeCase(field.Name)
-		}
-	}
-
-	// 如果找不到字段，使用默认规则
-	return ma.toSnakeCase(fieldName)
 }

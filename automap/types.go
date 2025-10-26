@@ -38,6 +38,7 @@ type FieldInfo struct {
 	SourceType string          // 来源类型（嵌入字段）
 	IsEmbedded bool            // 是否为嵌入字段
 	ASTField   *ast.Field      // AST字段节点
+	StructType *ast.StructType // 字段是所属的结构体
 }
 
 // JSONFieldInfo JSON字段信息

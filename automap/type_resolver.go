@@ -504,19 +504,19 @@ func (tr *TypeResolver) extractColumnName(gormTag string) string {
 	return ""
 }
 
-// isJSONType 检查是否为JSONType
+// isJSONType 检查是否为JSONType或JSONSlice
 func (tr *TypeResolver) isJSONType(expr ast.Expr) bool {
 	if selectorExpr, ok := expr.(*ast.SelectorExpr); ok {
 		if x, ok := selectorExpr.X.(*ast.Ident); ok {
-			return x.Name == "datatypes" && selectorExpr.Sel.Name == "JSONType"
+			return x.Name == "datatypes" && (selectorExpr.Sel.Name == "JSONType" || selectorExpr.Sel.Name == "JSONSlice")
 		}
 	}
 
-	// 检查泛型形式：datatypes.JSONType[B_Token]
+	// 检查泛型形式：datatypes.JSONType[B_Token] 或 datatypes.JSONSlice[ExchangeRule]
 	if indexExpr, ok := expr.(*ast.IndexExpr); ok {
 		if selectorExpr, ok := indexExpr.X.(*ast.SelectorExpr); ok {
 			if x, ok := selectorExpr.X.(*ast.Ident); ok {
-				return x.Name == "datatypes" && selectorExpr.Sel.Name == "JSONType"
+				return x.Name == "datatypes" && (selectorExpr.Sel.Name == "JSONType" || selectorExpr.Sel.Name == "JSONSlice")
 			}
 		}
 	}
@@ -526,12 +526,21 @@ func (tr *TypeResolver) isJSONType(expr ast.Expr) bool {
 
 // parseJSONFields 解析JSON字段
 func (tr *TypeResolver) parseJSONFields(expr ast.Expr) []JSONFieldInfo {
-	// 检查泛型形式：datatypes.JSONType[T]
+	// 检查泛型形式：datatypes.JSONType[T] 或 datatypes.JSONSlice[T]
 	if indexExpr, ok := expr.(*ast.IndexExpr); ok {
 		// 获取泛型参数
 		typeArg := indexExpr.Index
 		typeStr := tr.getFieldType(typeArg)
 
+		// 检查是否是JSONSlice类型
+		if selectorExpr, ok := indexExpr.X.(*ast.SelectorExpr); ok {
+			if x, ok := selectorExpr.X.(*ast.Ident); ok && x.Name == "datatypes" && selectorExpr.Sel.Name == "JSONSlice" {
+				// JSONSlice类型应该作为整体处理，不解析内部字段
+				return []JSONFieldInfo{}
+			}
+		}
+
+		// 对于JSONType类型，继续解析字段
 		// 检查是否是简单类型（不是结构体）
 		if tr.isSimpleType(typeStr) {
 			// 对于简单类型如 []string, int, string 等，不解析为JSON字段

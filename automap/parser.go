@@ -301,33 +301,6 @@ func (p *Parser) isErrorType(expr ast.Expr) bool {
 	return false
 }
 
-// ParseTypeDetails 解析类型详细信息（字段等）
-func (p *Parser) ParseTypeDetails(typeInfo *TypeInfo) error {
-	// 查找类型定义文件
-	typeDef, err := p.findTypeDefinition(typeInfo)
-	if err != nil {
-		return fmt.Errorf("查找类型定义失败: %w", err)
-	}
-
-	// 解析字段
-	fields, err := p.parseStructFields(typeDef)
-	if err != nil {
-		return fmt.Errorf("解析结构体字段失败: %w", err)
-	}
-
-	typeInfo.Fields = fields
-
-	// 解析方法
-	methods, err := p.parseTypeMethods(typeDef)
-	if err != nil {
-		return fmt.Errorf("解析类型方法失败: %w", err)
-	}
-
-	typeInfo.Methods = methods
-
-	return nil
-}
-
 // findTypeDefinition 查找类型定义
 func (p *Parser) findTypeDefinition(typeInfo *TypeInfo) (*ast.TypeSpec, error) {
 	// 如果是当前包的类型
@@ -361,69 +334,6 @@ func (p *Parser) findTypeInPackage(pkgPath, typeName string) (*ast.TypeSpec, err
 	}
 
 	return nil, fmt.Errorf("未找到类型定义: %s", typeName)
-}
-
-// parseStructFields 解析结构体字段
-func (p *Parser) parseStructFields(typeSpec *ast.TypeSpec) ([]FieldInfo, error) {
-	structType, ok := typeSpec.Type.(*ast.StructType)
-	if !ok {
-		return nil, fmt.Errorf("类型不是结构体: %s", typeSpec.Name.Name)
-	}
-
-	var fields []FieldInfo
-
-	for _, field := range structType.Fields.List {
-		fieldInfos, err := p.parseField(field)
-		if err != nil {
-			return nil, err
-		}
-		fields = append(fields, fieldInfos...)
-	}
-
-	return fields, nil
-}
-
-// parseField 解析单个字段
-func (p *Parser) parseField(field *ast.Field) ([]FieldInfo, error) {
-	var fieldNames []string
-	if len(field.Names) > 0 {
-		for _, name := range field.Names {
-			fieldNames = append(fieldNames, name.Name)
-		}
-	} else {
-		// 嵌入字段
-		fieldNames = append(fieldNames, "")
-	}
-
-	var result []FieldInfo
-
-	for _, fieldName := range fieldNames {
-		fieldType := p.getFieldType(field.Type)
-		gormTag := p.extractGormTag(field.Tag)
-		columnName := p.extractColumnName(gormTag)
-
-		// 检查是否为JSONType
-		isJSONType := p.isJSONType(field.Type)
-		var jsonFields []JSONFieldInfo
-		if isJSONType {
-			jsonFields = p.parseJSONFields(field.Type)
-		}
-
-		fieldInfo := FieldInfo{
-			Name:       fieldName,
-			Type:       fieldType,
-			GormTag:    gormTag,
-			ColumnName: columnName,
-			IsJSONType: isJSONType,
-			JSONFields: jsonFields,
-			IsEmbedded: len(field.Names) == 0,
-			ASTField:   field,
-		}
-
-		result = append(result, fieldInfo)
-	}
-
-	return result, nil
 }
 
 // getFieldType 获取字段类型字符串
