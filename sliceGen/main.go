@@ -3,8 +3,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/donutnomad/gotoolkit/internal/utils"
-	xast2 "github.com/donutnomad/gotoolkit/internal/xast"
 	"go/ast"
 	"go/format"
 	"go/parser"
@@ -14,6 +12,9 @@ import (
 	"path/filepath"
 	"strings"
 	"text/template"
+
+	"github.com/donutnomad/gotoolkit/internal/utils"
+	xast2 "github.com/donutnomad/gotoolkit/internal/xast"
 
 	"github.com/samber/lo"
 	"golang.org/x/exp/maps"
