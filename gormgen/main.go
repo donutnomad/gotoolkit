@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/donutnomad/gotoolkit/internal/gormparse"
 	"github.com/donutnomad/gotoolkit/internal/structparse"
@@ -70,6 +71,8 @@ func main() {
 	fileModelsMap := make(map[string][]*gormparse.GormModelInfo)
 	var fileOrderList []string // 保持文件顺序
 	var mapperMethod [][2]string
+
+	var start = time.Now()
 
 	// 处理每个结构体
 	for _, structName := range structList {
@@ -179,7 +182,7 @@ func main() {
 		for _, targetFile := range fileOrderList {
 			allModels = append(allModels, fileModelsMap[targetFile]...)
 		}
-		do(one, isPatch, *outputFile, allModels, 3, mapperMethod)
+		do(one, isPatch, *outputFile, allModels, 3, mapperMethod, start)
 	} else {
 		// 按文件分组生成
 		for _, targetFile := range fileOrderList {
@@ -196,7 +199,7 @@ func main() {
 				queryFile = strings.TrimSuffix(targetFile, ".go") + "_query.go"
 			}
 
-			do(one, isPatch, queryFile, models, 9, mapperMethod)
+			do(one, isPatch, queryFile, models, 9, mapperMethod, start)
 		}
 	}
 }
@@ -205,8 +208,8 @@ func trimPtr(input string) string {
 	return strings.TrimPrefix(input, "*")
 }
 
-func do(one *bool, isPatch func() bool, queryFile string, models []*gormparse.GormModelInfo, end int, mapperMethod [][2]string) {
-	if isPatch() && len(mapperMethod) == 0 {
+func do(one *bool, isPatch func() bool, queryFile string, models []*gormparse.GormModelInfo, end int, mapperMethod [][2]string, start time.Time) {
+	if *patch2 && len(mapperMethod) == 0 {
 		panic("[gormgen] 使用-patch2的时候，请指定-mapper xxx.XXXX 或者使用ToPO作为函数名")
 	}
 
@@ -217,14 +220,14 @@ func do(one *bool, isPatch func() bool, queryFile string, models []*gormparse.Go
 		if err != nil {
 			log.Fatalf("[gormgen] 生成合并文件失败: %v", err)
 		}
-		fmt.Printf("[gormgen] 成功生成 %s (包含 %d 个结构体, query+patch)\n", queryFile, len(models))
+		fmt.Printf("[gormgen] 成功生成 %s (包含 %d 个结构体, query+patch) 耗时: %v \n", queryFile, len(models), time.Since(start))
 	} else {
 		// 生成query文件
 		err := GenQuery(queryFile, models)
 		if err != nil {
 			log.Fatalf("[gormgen] 生成查询文件失败: %v", err)
 		}
-		fmt.Printf("[gormgen] 成功生成 %s (包含 %d 个结构体)\n", queryFile, len(models))
+		fmt.Printf("[gormgen] 成功生成 %s (包含 %d 个结构体) 耗时: %v \n", queryFile, len(models), time.Since(start))
 
 		// 生成patch文件
 		if isPatch() {
@@ -233,7 +236,7 @@ func do(one *bool, isPatch func() bool, queryFile string, models []*gormparse.Go
 			if err != nil {
 				log.Fatalf("[gormgen] 生成GORM patch文件失败: %v", err)
 			}
-			fmt.Printf("[gormgen] 成功生成 %s (包含 %d 个结构体)\n", patchFile, len(models))
+			fmt.Printf("[gormgen] 成功生成 %s (包含 %d 个结构体) 耗时: %v \n", patchFile, len(models), time.Since(start))
 		}
 	}
 }

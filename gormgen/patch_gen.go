@@ -2,11 +2,14 @@ package main
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/donutnomad/gotoolkit/automap"
 	"github.com/donutnomad/gotoolkit/internal/gormparse"
 	"github.com/donutnomad/gotoolkit/internal/utils"
+	"github.com/samber/lo"
 )
 
 var name = "gormgen"
@@ -49,8 +52,8 @@ func (g PatchGen) GenPkg(sb *strings.Builder, gormModels []*GormModelInfo) {
 	// 写入包声明 - 使用第一个模型的包名
 	sb.WriteString(fmt.Sprintf("package %s\n\n", gormModels[0].PackageName))
 }
-func (g PatchGen) GenImports(sb *strings.Builder, gormModels []*GormModelInfo) {
-	// 收集所有需要的导入
+func (g PatchGen) GetImports(gormModels []*gormparse.GormModelInfo) []string {
+	var ret []string
 	allImports := make(map[string]bool)
 	for _, gormModel := range gormModels {
 		imports := getGormRequiredImports(gormModel)
@@ -58,11 +61,15 @@ func (g PatchGen) GenImports(sb *strings.Builder, gormModels []*GormModelInfo) {
 			allImports[imp] = true
 		}
 	}
-
+	ret = append(ret, slices.Collect(maps.Keys(allImports))...)
+	return lo.Uniq(ret)
+}
+func (g PatchGen) GenImports(sb *strings.Builder, gormModels []*GormModelInfo) {
+	allImports := g.GetImports(gormModels)
 	// 写入导入
 	if len(allImports) > 0 {
 		sb.WriteString("import (\n")
-		for imp := range allImports {
+		for _, imp := range allImports {
 			sb.WriteString(fmt.Sprintf("\t\"%s\"\n", imp))
 		}
 		sb.WriteString(")\n\n")
