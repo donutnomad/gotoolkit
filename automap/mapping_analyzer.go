@@ -468,10 +468,12 @@ func (ma *MappingAnalyzer) extractJSONFields(callExpr *ast.CallExpr, bFieldNameH
 
 // processSimpleJSONFieldMapping 处理简单类型的JSON字段映射
 func (ma *MappingAnalyzer) processSimpleJSONFieldMapping(callExpr *ast.CallExpr, fields []string, bFieldNameHint string) {
-	// 使用传入的字段名提示，如果为空则尝试分析
-	bFieldName := bFieldNameHint
+	// 优先使用findBFieldNameForJSONCall的结果
+	bFieldName := ma.findBFieldNameForJSONCall(callExpr)
+
+	// 如果找不到，再使用传入的字段名提示
 	if bFieldName == "" {
-		bFieldName = ma.findBFieldNameForJSONCall(callExpr)
+		bFieldName = bFieldNameHint
 	}
 
 	if bFieldName == "" {
@@ -519,10 +521,12 @@ func (ma *MappingAnalyzer) processSimpleJSONFieldMapping(callExpr *ast.CallExpr,
 
 // processJSONFieldMapping 处理JSON字段映射
 func (ma *MappingAnalyzer) processJSONFieldMapping(callExpr *ast.CallExpr, compLit *ast.CompositeLit, fields []string, bFieldNameHint string) {
-	// 使用传入的字段名提示，如果为空则尝试分析
-	bFieldName := bFieldNameHint
+	// 优先使用findBFieldNameForJSONCall的结果
+	bFieldName := ma.findBFieldNameForJSONCall(callExpr)
+
+	// 如果找不到，再使用传入的字段名提示
 	if bFieldName == "" {
-		bFieldName = ma.findBFieldNameForJSONCall(callExpr)
+		bFieldName = bFieldNameHint
 	}
 
 	if bFieldName == "" {
@@ -600,6 +604,22 @@ func (ma *MappingAnalyzer) findBFieldNameForJSONCall(callExpr *ast.CallExpr) str
 						if ident, ok := kv.Key.(*ast.Ident); ok {
 							result = ident.Name
 							return false // 找到了，停止遍历
+						}
+					}
+				}
+			}
+		} else if unaryExpr, ok := n.(*ast.UnaryExpr); ok && unaryExpr.Op == token.AND {
+			// 检查取地址操作中的结构体字面量
+			if compLit, ok := unaryExpr.X.(*ast.CompositeLit); ok {
+				for _, elt := range compLit.Elts {
+					if kv, ok := elt.(*ast.KeyValueExpr); ok {
+						// 检查值是否等于我们要找的调用表达式
+						if kv.Value == callExpr {
+							// 提取字段名
+							if ident, ok := kv.Key.(*ast.Ident); ok {
+								result = ident.Name
+								return false // 找到了，停止遍历
+							}
 						}
 					}
 				}

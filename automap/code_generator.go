@@ -245,7 +245,11 @@ OUT:
 				if k != normalKey {
 					builder.WriteString(fmt.Sprintf("// %s\n", k))
 				}
-				for _, tmp := range nestedMapping[k] {
+				list := nestedMapping[k]
+				sort.Slice(list, func(i, j int) bool {
+					return list[i].aField < list[j].aField
+				})
+				for _, tmp := range list {
 					writeField3(builder, tmp.aField,
 						cg.getJsonName(thisTypeInfo, tmp.bFieldPath),
 						fmt.Sprintf("field.%s", tmp.bFieldPath),
