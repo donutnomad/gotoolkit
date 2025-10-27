@@ -293,6 +293,24 @@ func (ma *MappingAnalyzer) extractAFieldsFromExpr(expr ast.Expr) []string {
 			fields = append(fields, aFields...)
 		}
 
+	case *ast.CompositeLit:
+		// 处理复合字面量，如 []string{entity.Value3}, domain.KeyValue{...}
+		for _, elt := range e.Elts {
+			if kv, ok := elt.(*ast.KeyValueExpr); ok {
+				// 对于结构体字面量，递归处理值
+				nestedFields := ma.extractAFieldsFromExpr(kv.Value)
+				fields = append(fields, nestedFields...)
+			} else if _, ok := elt.(*ast.SelectorExpr); ok {
+				// 对于切片中的选择器表达式，如 []string{entity.Value3} 中的 entity.Value3
+				nestedFields := ma.extractAFieldsFromExpr(elt)
+				fields = append(fields, nestedFields...)
+			} else {
+				// 对于其他类型的元素，递归处理
+				nestedFields := ma.extractAFieldsFromExpr(elt)
+				fields = append(fields, nestedFields...)
+			}
+		}
+
 	default:
 		// 其他表达式类型
 	}
@@ -722,6 +740,13 @@ func (ma *MappingAnalyzer) analyzeNestedJSONField(parentField string, compLit *a
 
 				// 映射A字段到嵌套的JSON子字段
 				jsonMapping.SetAToB(aFields[0], nestedJSONField)
+			}
+		} else {
+			// 处理非KeyValueExpr的元素，如 []string{entity.Value3} 中的 entity.Value3
+			aFields := ma.extractAFieldsFromExpr(elt)
+			if len(aFields) > 0 {
+				// 直接映射到父字段
+				jsonMapping.SetAToB(aFields[0], parentField)
 			}
 		}
 	}
