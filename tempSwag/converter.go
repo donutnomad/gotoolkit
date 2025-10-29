@@ -2,12 +2,12 @@ package main
 
 import (
 	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/getkin/kin-openapi/openapi2"
@@ -53,24 +53,20 @@ type HttpCollection struct {
 }
 
 // JsonScheme JSON Schema定义
-type JsonScheme struct {
-	Type       string              `json:"type"`
-	Required   []string            `json:"required,omitempty"`
-	Properties map[string]Property `json:"properties"`
-}
-
-// Property 属性定义
-type Property struct {
-	Description string `json:"description,omitempty"`
-	Type        string `json:"type"`
-}
+//
+//	type JsonScheme struct {
+//		Type       string                       `json:"type"`
+//		Required   []string                     `json:"required,omitempty"`
+//		Properties map[string]*openapi3.Schema  `json:"properties"`
+//	}
+type JsonScheme = openapi3.Schema
 
 // SchemaItem Schema项
 type SchemaItem struct {
-	Id          string     `json:"id"`
-	Name        string     `json:"name"`
-	JsonSchema  JsonScheme `json:"jsonSchema"`
-	Description string     `json:"description"`
+	Id          string      `json:"id"`
+	Name        string      `json:"name"`
+	JsonSchema  *JsonScheme `json:"jsonSchema"`
+	Description string      `json:"description"`
 }
 
 // SchemeCollection Schema集合
@@ -391,22 +387,23 @@ func (c *OpenAPIConverter) convertAPIItem(
 		Path:        path,
 		Method:      method,
 		Parameters: Parameters{
-			Path:   []PathParameter{},
-			Query:  []QueryParameter{},
-			Cookie: []any{},
-			Header: []any{},
+			Path:   []CommonParameter{},
+			Query:  []CommonParameter{},
+			Cookie: []CommonParameter{},
+			Header: []CommonParameter{},
 		},
 		CommonParameters: struct{}{},
 		Auth:             struct{}{},
 		Responses:        []Response{},
 		ResponseExamples: []any{},
-		RequestBody:      RequestBody{},
-		Cases:            []Case{},
-		CustomAPIFields:  "{}",
-		CodeSamples:      []any{},
-		OasExtensions:    "{}",
-		SecurityScheme:   struct{}{},
-		Callbacks:        "{}",
+		//RequestBody:      RequestBody{},
+		RequestBody:     &openapi3.RequestBodyRef{},
+		Cases:           []Case{},
+		CustomAPIFields: "{}",
+		CodeSamples:     []any{},
+		OasExtensions:   "{}",
+		SecurityScheme:  struct{}{},
+		Callbacks:       "{}",
 	}
 
 	// 处理参数
@@ -418,40 +415,16 @@ func (c *OpenAPIConverter) convertAPIItem(
 		if param == nil {
 			continue
 		}
-
+		p := NewCommonParameter(param)
 		switch param.In {
-		case "path":
-			item.Parameters.Path = append(item.Parameters.Path, PathParameter{
-				Id:          generateID(),
-				Name:        param.Name,
-				Required:    param.Required,
-				Enable:      true,
-				Description: param.Description,
-				Example:     fmt.Sprintf("%v", param.Example),
-				Type:        getSchemaType(param.Schema),
-				Schema: SchemaInfo{
-					Type: getSchemaType(param.Schema),
-				},
-			})
-		case "query":
-			queryParam := QueryParameter{
-				Id:          generateID(),
-				Name:        param.Name,
-				Required:    param.Required,
-				Enable:      true,
-				Description: param.Description,
-				Type:        getSchemaType(param.Schema),
-				Schema: QuerySchema{
-					Type: getSchemaType(param.Schema),
-				},
-			}
-			if param.Schema != nil && param.Schema.Value != nil {
-				if param.Schema.Value.Default != nil {
-					queryParam.Schema.Default = param.Schema.Value.Default
-				}
-				queryParam.Schema.Enum = param.Schema.Value.Enum
-			}
-			item.Parameters.Query = append(item.Parameters.Query, queryParam)
+		case openapi3.ParameterInPath:
+			item.Parameters.Path = append(item.Parameters.Path, p)
+		case openapi3.ParameterInQuery:
+			item.Parameters.Query = append(item.Parameters.Query, p)
+		case openapi3.ParameterInHeader:
+			item.Parameters.Header = append(item.Parameters.Header, p)
+		case openapi3.ParameterInCookie:
+			item.Parameters.Cookie = append(item.Parameters.Cookie, p)
 		}
 	}
 
@@ -521,7 +494,7 @@ func (c *OpenAPIConverter) convertAPIItem(
 			}
 		}
 
-		item.RequestBody = requestBody
+		item.RequestBody = operation.RequestBody
 	}
 
 	return item
@@ -707,28 +680,28 @@ func (c *OpenAPIConverter) getFolderName(operation *openapi3.Operation) string {
 }
 
 func (c *OpenAPIConverter) createSchemaItem(name string, schema *openapi3.Schema, componentType, _ string) SchemaItem {
-	properties := make(map[string]Property)
-	if schema.Properties != nil {
-		for propName, propRef := range schema.Properties {
-			if propRef.Value != nil {
-				properties[propName] = Property{
-					Description: propRef.Value.Description,
-					Type:        getSchemaTypeFromSchema(propRef.Value),
-				}
-			}
-		}
-	}
-
+	//properties := make(map[string]*openapi3.Schema)
+	//if schema.Properties != nil {
+	//	for propName, propRef := range schema.Properties {
+	//		if propRef.Value != nil {
+	//			// 直接使用 openapi3.Schema 对象
+	//			properties[propName] = propRef.Value
+	//		}
+	//	}
+	//}
 	return SchemaItem{
-		Id:   fmt.Sprintf("#/components/%s/%s", componentType, name),
-		Name: name,
-		JsonSchema: JsonScheme{
-			Type:       getSchemaTypeFromSchema(schema),
-			Properties: properties,
-			Required:   schema.Required,
-		},
+		Id:          fmt.Sprintf("#/components/%s/%s", componentType, name),
+		Name:        name,
+		JsonSchema:  schema,
 		Description: schema.Description,
 	}
+	//	JsonSchema: JsonScheme{
+	//		Type:       getSchemaTypeFromSchema(schema),
+	//		Properties: properties,
+	//		Required:   schema.Required,
+	//	},
+	//	Description: schema.Description,
+	//}
 }
 
 func (c *OpenAPIConverter) addSchemaToFolder(folders *[]SchemaFolder, item SchemaItem, folderName string) {
@@ -854,13 +827,20 @@ func (c *OpenAPIConverter) ensureFolderPath(folders *[]FolderItem, path string) 
 // 辅助函数
 
 func generateID() string {
-	// 生成16字节的随机ID
-	b := make([]byte, 16)
+	const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	const idLength = 10
+
+	b := make([]byte, idLength)
 	if _, err := rand.Read(b); err != nil {
-		// 如果随机数生成失败，使用时间戳作为后备
-		return fmt.Sprintf("id_%d", len(fmt.Sprintf("%d", 1)))
+		// 如果随机数生成失败，使用备用方案
+		return "DefaultIDx"
 	}
-	return hex.EncodeToString(b)
+
+	for i := range b {
+		b[i] = letters[int(b[i])%len(letters)]
+	}
+
+	return string(b)
 }
 
 func getInfoTitle(doc *openapi3.T) string {
@@ -945,9 +925,17 @@ func convertFolderToChildren(folders []*FolderItem) []ChildrenItem {
 				Callbacks:        item.Callbacks,
 			})
 		}
+		// 排序Items
+		sort.Slice(child.Items, func(i, j int) bool {
+			return child.Items[i].Path < child.Items[j].Path
+		})
 
 		result = append(result, child)
 	}
+
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Name > result[j].Name
+	})
 
 	return result
 }
@@ -982,31 +970,49 @@ type APIItem struct {
 }
 
 type Parameters struct {
-	Path   []PathParameter  `json:"path"`
-	Query  []QueryParameter `json:"query"`
-	Cookie []any            `json:"cookie"`
-	Header []any            `json:"header"`
+	Path   []CommonParameter `json:"path"`
+	Query  []CommonParameter `json:"query"`
+	Cookie []CommonParameter `json:"cookie"`
+	Header []CommonParameter `json:"header"`
+}
+
+type CommonParameter struct {
+	Id     string `json:"id"`
+	Enable bool   `json:"enable"`
+	*openapi3.Parameter
+}
+
+func NewCommonParameter(param *openapi3.Parameter) CommonParameter {
+	return CommonParameter{
+		Id:        generateID(),
+		Enable:    true,
+		Parameter: param,
+	}
 }
 
 type PathParameter struct {
-	Id          string     `json:"id"`
-	Name        string     `json:"name"`
-	Required    bool       `json:"required"`
-	Enable      bool       `json:"enable"`
-	Description string     `json:"description"`
-	Example     string     `json:"example"`
-	Type        string     `json:"type"`
-	Schema      SchemaInfo `json:"schema"`
+	Id     string `json:"id"`
+	Enable bool   `json:"enable"`
+	*openapi3.Parameter
+
+	//Name        string     `json:"name"`
+	//Required    bool       `json:"required"`
+	//Description string     `json:"description"`
+	//Example     any        `json:"example"`
+	//Type        string     `json:"type"`
+	//Schema      SchemaInfo `json:"schema"`
 }
 
 type QueryParameter struct {
-	Id          string      `json:"id"`
-	Name        string      `json:"name"`
-	Required    bool        `json:"required"`
-	Enable      bool        `json:"enable"`
-	Description string      `json:"description"`
-	Type        string      `json:"type"`
-	Schema      QuerySchema `json:"schema"`
+	Id     string `json:"id"`
+	Enable bool   `json:"enable"`
+	*openapi3.Parameter
+
+	//Name        string      `json:"name"`
+	//Required    bool        `json:"required"`
+	//Description string      `json:"description"`
+	//Type        string      `json:"type"`
+	//Schema      QuerySchema `json:"schema"`
 }
 
 type SchemaInfo struct {
