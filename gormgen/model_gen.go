@@ -80,8 +80,8 @@ func (g *ModelGen) GenPkg(sb *strings.Builder, gormModels []*gormparse.GormModel
 }
 func (g *ModelGen) GetImports(gormModels []*gormparse.GormModelInfo) []string {
 	ret := []string{
-		"github.com/donutnomad/gotoolkit/lib/gsql",
-		"github.com/donutnomad/gotoolkit/lib/gsql/field",
+		"github.com/donutnomad/gsql",
+		"github.com/donutnomad/gsql/field",
 	}
 	allImports := make(map[string]bool)
 	for _, gormModel := range gormModels {
