@@ -39,6 +39,8 @@ func (cg *CodeGenerator) Generate(result *ParseResult) string {
 	cg.generateFunctionBody(&builder)
 
 	// 生成返回语句
+	builder.WriteString("\t_=b\n")
+	builder.WriteString("\t_=fields\n")
 	builder.WriteString("\treturn values\n")
 	builder.WriteString("}\n")
 
