@@ -1,9 +1,10 @@
 package methods
 
 import (
-	"github.com/donutnomad/gotoolkit/internal/utils"
 	"regexp"
 	"strings"
+
+	"github.com/donutnomad/gotoolkit/internal/utils"
 
 	"github.com/dave/jennifer/jen"
 	"github.com/samber/lo"

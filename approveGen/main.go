@@ -110,6 +110,7 @@ var (
 	outputFileName_ = flag.String("out", "", "output filename")
 	version2        = flag.Bool("v2", false, "version2")
 	version3        = flag.Bool("v3", false, "version3")
+	version4        = flag.Bool("v4", false, "version4")
 	pkgName         = flag.String("pkgname", "", "package name prefix for MethodName()")
 	genMethods      = flag.Bool("methods", true, "generate CallMethodForApproval and CallMethodForApprovalHookRejected methods")
 )
@@ -119,6 +120,10 @@ func main() {
 	if *paths == "" || *outputFileName_ == "" {
 		fmt.Println("type parameter is required")
 		return
+	}
+
+	if *version4 {
+		*version3 = true
 	}
 
 	var pathList = strings.Split(*paths, ",")
@@ -356,7 +361,6 @@ func main() {
 				if !ok {
 					panic(fmt.Sprintf("func: %s 's template is not define", info.Name))
 				}
-
 				// 如果当前func没有定义args，使用全局args
 				if len(info.Args) == 0 {
 					if globalArgs, hasGlobalArgs := funcGlobalArgsMapping[info.Name]; hasGlobalArgs {
@@ -380,11 +384,20 @@ func main() {
 				})
 
 				var methodArgs = genMethodParamsString(methodParams, false, getNameFunc2)
+
 				var methodArgNames []string
 				for _, param := range methodParams {
 					for _, name := range param.Names {
 						methodArgNames = append(methodArgNames, name.Name)
 					}
+				}
+				// 添加一个formatter方法, v4添加
+				if *version4 {
+					if strings.HasSuffix(methodArgs, ")") {
+						methodArgs = methodArgs[:len(methodArgs)-1] + ", formatter IApprovalFormatter" + methodArgs[len(methodArgs)-1:]
+					}
+					tmplStr = strings.ReplaceAll(tmplStr, "\\n", "\n")
+					methodArgNames = append(methodArgNames, "formatter")
 				}
 
 				methodCodes = append(methodCodes, info.Generator().Generate(tmplStr, method.ObjName, method.StructName, method.MethodName, methodArgNames, methodArgs, methodStructArgCode.GoString(), returnString, *version2))

@@ -1,9 +1,10 @@
 package methods
 
 import (
-	"github.com/donutnomad/gotoolkit/internal/utils"
 	"regexp"
 	"strings"
+
+	"github.com/donutnomad/gotoolkit/internal/utils"
 
 	"github.com/dave/jennifer/jen"
 )
@@ -248,7 +249,12 @@ func (m *FuncMethod) Generate(template, receiver, structName, methodName string,
 		var code = jen.Empty()
 
 		code.Func().Params(jen.Id(receiver).Id(structName)).Id(methodName).Id(methodArgCode).Id(returnArgsCode).BlockFunc(func(group *jen.Group) {
-			group.Return().Id(utils.MustExecuteTemplate(m, m.Template))
+			cc := utils.MustExecuteTemplate(m, m.Template)
+			if strings.HasPrefix(cc, "\n") {
+				group.Id(cc[1:])
+			} else {
+				group.Return().Id(cc)
+			}
 		}).Line()
 
 		if m.Info.Nest {
