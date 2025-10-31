@@ -25,7 +25,7 @@ type SwagGenApplication struct {
 func NewSwagGenApplication(config *GenerationConfig) *SwagGenApplication {
 	app := &SwagGenApplication{
 		config:     config,
-		logger:     NewConsoleLogger(config.Verbose),
+		logger:     NewConsoleLogger("warn"),
 		fileSystem: NewDefaultFileSystem(),
 	}
 	// Initialize components

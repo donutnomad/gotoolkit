@@ -7,50 +7,83 @@ import (
 	"strings"
 )
 
+// 日志等级常量
+const (
+	LogLevelDebug = "debug"
+	LogLevelInfo  = "info"
+	LogLevelWarn  = "warn"
+	LogLevelError = "error"
+)
+
+// 日志等级优先级映射
+var logLevelPriority = map[string]int{
+	LogLevelDebug: 0,
+	LogLevelInfo:  1,
+	LogLevelWarn:  2,
+	LogLevelError: 3,
+}
+
 // ConsoleLogger 控制台日志记录器实现
 type ConsoleLogger struct {
-	verbose bool
-	level   string
+	level string // debug/info/warn/error
 }
 
 // NewConsoleLogger 创建控制台日志记录器
-func NewConsoleLogger(verbose bool) *ConsoleLogger {
-	level := "info"
-	if verbose {
-		level = "debug"
+func NewConsoleLogger(level string) *ConsoleLogger {
+	// 默认日志等级为 info
+	if level == "" {
+		level = LogLevelInfo
 	}
 	return &ConsoleLogger{
-		verbose: verbose,
-		level:   level,
+		level: level,
 	}
+}
+
+// shouldLog 判断是否应该输出日志
+func (l *ConsoleLogger) shouldLog(msgLevel string) bool {
+	currentPriority, ok1 := logLevelPriority[l.level]
+	msgPriority, ok2 := logLevelPriority[msgLevel]
+
+	// 如果等级未知，默认输出
+	if !ok1 || !ok2 {
+		return true
+	}
+
+	// 只有消息等级 >= 设置的等级时才输出
+	return msgPriority >= currentPriority
 }
 
 // Debug 记录调试信息
 func (l *ConsoleLogger) Debug(format string, args ...interface{}) {
-	if l.verbose {
+	if l.shouldLog(LogLevelDebug) {
 		fmt.Printf("[DEBUG] "+format+"\n", args...)
 	}
 }
 
 // Info 记录信息
 func (l *ConsoleLogger) Info(format string, args ...interface{}) {
-	fmt.Printf("[INFO] "+format+"\n", args...)
+	if l.shouldLog(LogLevelInfo) {
+		fmt.Printf("[INFO] "+format+"\n", args...)
+	}
 }
 
 // Warn 记录警告
 func (l *ConsoleLogger) Warn(format string, args ...interface{}) {
-	fmt.Printf("[WARN] "+format+"\n", args...)
+	if l.shouldLog(LogLevelWarn) {
+		fmt.Printf("[WARN] "+format+"\n", args...)
+	}
 }
 
 // Error 记录错误
 func (l *ConsoleLogger) Error(format string, args ...interface{}) {
-	fmt.Printf("[ERROR] "+format+"\n", args...)
+	if l.shouldLog(LogLevelError) {
+		fmt.Printf("[ERROR] "+format+"\n", args...)
+	}
 }
 
 // SetLevel 设置日志级别
 func (l *ConsoleLogger) SetLevel(level string) {
 	l.level = level
-	l.verbose = (level == "debug")
 }
 
 // DefaultFileSystem 默认文件系统实现
