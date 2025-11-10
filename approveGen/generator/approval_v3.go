@@ -44,6 +44,9 @@ func (amc *ApprovalCaller) {{.GenMethodName}}(ctx context.Context, arg any, appr
 				}
 			}{{end}}
 		}
+		if !approved {
+			return nil, nil
+		}
 {{- end}}
 	}
 	return nil, errors.New("CodeUnknownMethod")
