@@ -467,7 +467,7 @@ func (g *GinGenerator) generateMethodCall(method SwaggerMethod) string {
 	methodCall := fmt.Sprintf("a.inner.%s(%s)", method.Name, strings.Join(args, ", "))
 
 	// 生成响应处理
-	responseCode := g.generateResponseHandling(method, methodCall)
+	responseCode := g.generateResponseHandling(method, methodCall, "ctx")
 
 	return "        " + responseCode
 }
@@ -486,31 +486,28 @@ func (g *GinGenerator) methodNeedsContext(method SwaggerMethod) bool {
 }
 
 // generateResponseHandling 生成响应处理代码
-func (g *GinGenerator) generateResponseHandling(method SwaggerMethod, methodCall string) string {
+func (g *GinGenerator) generateResponseHandling(method SwaggerMethod, methodCall, receiverName string) string {
 	// 检查返回类型
 	if method.ResponseType.FullName == "" {
 		// 无返回值
 		return fmt.Sprintf(`%s
-        onGinResponse(c, gin.H{"status": "success"})`, methodCall)
+        onGinResponse[string](%s, "", nil)`, methodCall, receiverName)
 	}
 
 	// 检查是否是错误类型
 	if g.isErrorType(method.ResponseType) {
-		return fmt.Sprintf(`if err := %s; err != nil {
-            onGinBindErr(ctx, err)
-            return
-        }
-        onGinResponse(c, gin.H{"status": "success"})`, methodCall)
+		return fmt.Sprintf(`err := %s
+        onGinResponse[string](%s, "", err)`, methodCall, receiverName)
 	}
 
 	// 普通返回值 - 使用 result 避免与请求参数 data 冲突
 	if *version < 2 {
 		// 普通返回值 - 使用 result 避免与请求参数 data 冲突
 		return fmt.Sprintf(`var result %s = %s
-        onGinResponse(ctx, result)`, method.ResponseType.FullName, methodCall)
+        onGinResponse(%s, result)`, method.ResponseType.FullName, methodCall, receiverName)
 	}
 	return fmt.Sprintf(`result, err := %s
-        onGinResponse[%s](ctx, result, err)`, methodCall, method.ResponseType.FullName)
+        onGinResponse[%s](%s, result, err)`, methodCall, method.ResponseType.FullName, receiverName)
 }
 
 // isErrorType 检查是否是错误类型
