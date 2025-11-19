@@ -72,13 +72,13 @@ func (am *AutoMap) ParseWithContext(funcName, callerFile string) (*ParseResult, 
 	// 解析A和B的嵌套类型
 	for idx, item := range aType.Fields {
 		if item.IsEmbedded {
-			item.EmbeddedFields = am.codeGenerator.getEmbeddedDatabaseFields(item.Type)
+			item.EmbeddedFields = am.codeGenerator.getEmbeddedDatabaseFieldsWithFile(item.Type, aType.FilePath)
 			aType.Fields[idx] = item
 		}
 	}
 	for idx, item := range bType.Fields {
 		if item.IsEmbedded {
-			item.EmbeddedFields = am.codeGenerator.getEmbeddedDatabaseFields(item.Type)
+			item.EmbeddedFields = am.codeGenerator.getEmbeddedDatabaseFieldsWithFile(item.Type, bType.FilePath)
 			bType.Fields[idx] = item
 		}
 	}

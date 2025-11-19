@@ -412,11 +412,11 @@ func findPackagePathByImport(projectRoot, importPath string) (string, error) {
 	}
 
 	// 处理第三方包：尝试从Go模块缓存中查找
-	return findThirdPartyPackage(importPath)
+	return FindThirdPartyPackage(importPath)
 }
 
-// findThirdPartyPackage 查找第三方包的路径
-func findThirdPartyPackage(importPath string) (string, error) {
+// FindThirdPartyPackage 查找第三方包的路径（导出供其他包使用）
+func FindThirdPartyPackage(importPath string) (string, error) {
 	// 获取GOPATH和GOMODCACHE
 	goPath := os.Getenv("GOPATH")
 	goModCache := os.Getenv("GOMODCACHE")
@@ -433,10 +433,15 @@ func findThirdPartyPackage(importPath string) (string, error) {
 		goModCache = filepath.Join(goPath, "pkg", "mod")
 	}
 
+	// Go模块缓存中大写字母的编码规则：
+	// 大写字母会被编码为 "!小写字母"
+	// 例如：github.com/Xuanwo/gg -> github.com/!xuanwo/gg
+	encodedPath := encodeModulePath(importPath)
+
 	// 尝试在GOMODCACHE中查找包
 	// Go模块缓存中的路径格式通常是: github.com/user/repo@version
 	// 我们需要遍历可能的版本
-	packageCachePattern := filepath.Join(goModCache, importPath+"@*")
+	packageCachePattern := filepath.Join(goModCache, encodedPath+"@*")
 	matches, err := filepath.Glob(packageCachePattern)
 	if err != nil {
 		return "", fmt.Errorf("搜索模块缓存失败: %v", err)
@@ -460,6 +465,22 @@ func findThirdPartyPackage(importPath string) (string, error) {
 	}
 
 	return "", fmt.Errorf("未找到第三方包 %s，请确保该包已正确安装", importPath)
+}
+
+// encodeModulePath 将模块路径编码为 Go 模块缓存使用的格式
+// Go 模块缓存规则：大写字母前添加 ! 并转为小写
+// 例如：github.com/Xuanwo/gg -> github.com/!xuanwo/gg
+func encodeModulePath(path string) string {
+	var result strings.Builder
+	for _, r := range path {
+		if r >= 'A' && r <= 'Z' {
+			result.WriteRune('!')
+			result.WriteRune(r + 32) // 转为小写 (A-Z -> a-z)
+		} else {
+			result.WriteRune(r)
+		}
+	}
+	return result.String()
 }
 
 // getModuleName 从go.mod文件获取模块名称

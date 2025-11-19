@@ -402,10 +402,15 @@ func (cg *CodeGenerator) validateFieldCoverage(generatedCode string) error {
 
 // getEmbeddedDatabaseFields 获取嵌入结构体的数据库字段名
 func (cg *CodeGenerator) getEmbeddedDatabaseFields(embeddedType string) []FieldInfo {
+	return cg.getEmbeddedDatabaseFieldsWithFile(embeddedType, cg.typeResolver.currentFile)
+}
+
+// getEmbeddedDatabaseFieldsWithFile 获取嵌入结构体的数据库字段名，使用指定的文件作为上下文
+func (cg *CodeGenerator) getEmbeddedDatabaseFieldsWithFile(embeddedType, contextFile string) []FieldInfo {
 	typeInfo := NewTypeInfoFromName(embeddedType)
-	err := cg.typeResolver.ResolveTypeCurrent(typeInfo)
+	err := cg.typeResolver.ResolveType(typeInfo, contextFile)
 	if err != nil {
-		panic(fmt.Sprintf("cannot find typeInfo: %s", embeddedType))
+		panic(fmt.Sprintf("cannot find typeInfo: %s (error: %v)", embeddedType, err))
 	}
 	return typeInfo.Fields
 }

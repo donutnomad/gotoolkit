@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/donutnomad/gotoolkit/internal/structparse"
 )
 
 // TypeResolver 类型解析器，支持跨包类型查找
@@ -295,6 +297,12 @@ func (tr *TypeResolver) importPathToFilePath(importPath, currentFile string) (st
 		return vendorPath, nil
 	}
 
+	// 尝试从GOMODCACHE中查找第三方包
+	thirdPartyPath, err := structparse.FindThirdPartyPackage(importPath)
+	if err == nil {
+		return thirdPartyPath, nil
+	}
+
 	return "", fmt.Errorf("无法解析import路径: %s (currentFile: %s, moduleRoot: %s)", importPath, currentFile, moduleRoot)
 }
 
@@ -325,7 +333,7 @@ func (tr *TypeResolver) getModuleName(goModPath string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	// 简单解析go.mod文件获取模块名
 	// TODO: 使用更robust的解析方式
