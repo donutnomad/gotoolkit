@@ -433,26 +433,47 @@ func FindThirdPartyPackage(importPath string) (string, error) {
 		goModCache = filepath.Join(goPath, "pkg", "mod")
 	}
 
-	// Go模块缓存中大写字母的编码规则：
-	// 大写字母会被编码为 "!小写字母"
-	// 例如：github.com/Xuanwo/gg -> github.com/!xuanwo/gg
-	encodedPath := encodeModulePath(importPath)
+	// 尝试查找模块根路径
+	// 对于 github.com/user/repo/pkg/sub，需要尝试：
+	// 1. github.com/user/repo/pkg/sub@*
+	// 2. github.com/user/repo/pkg@*
+	// 3. github.com/user/repo@*
+	parts := strings.Split(importPath, "/")
 
-	// 尝试在GOMODCACHE中查找包
-	// Go模块缓存中的路径格式通常是: github.com/user/repo@version
-	// 我们需要遍历可能的版本
-	packageCachePattern := filepath.Join(goModCache, encodedPath+"@*")
-	matches, err := filepath.Glob(packageCachePattern)
-	if err != nil {
-		return "", fmt.Errorf("搜索模块缓存失败: %v", err)
-	}
+	for i := len(parts); i >= 1; i-- {
+		// 构建可能的模块根路径
+		modulePath := strings.Join(parts[:i], "/")
+		subPath := ""
+		if i < len(parts) {
+			subPath = strings.Join(parts[i:], "/")
+		}
 
-	// 如果找到多个版本，选择最新的一个（按字典序排序）
-	if len(matches) > 0 {
-		// 简单地选择最后一个（通常版本号较高）
-		latestMatch := matches[len(matches)-1]
-		if _, err := os.Stat(latestMatch); err == nil {
-			return latestMatch, nil
+		// Go模块缓存中大写字母的编码规则：
+		// 大写字母会被编码为 "!小写字母"
+		encodedModulePath := encodeModulePath(modulePath)
+
+		// 尝试在GOMODCACHE中查找包
+		packageCachePattern := filepath.Join(goModCache, encodedModulePath+"@*")
+		matches, err := filepath.Glob(packageCachePattern)
+		if err != nil {
+			continue
+		}
+
+		// 如果找到匹配的模块
+		if len(matches) > 0 {
+			// 选择最新的版本（按字典序排序，最后一个通常版本号较高）
+			latestMatch := matches[len(matches)-1]
+
+			// 如果有子路径，拼接上
+			finalPath := latestMatch
+			if subPath != "" {
+				finalPath = filepath.Join(latestMatch, subPath)
+			}
+
+			// 验证路径是否存在
+			if _, err := os.Stat(finalPath); err == nil {
+				return finalPath, nil
+			}
 		}
 	}
 
