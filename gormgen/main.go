@@ -27,6 +27,7 @@ var patch = flag.Bool("patch", false, "生成GORM Patch结构体和Build方法")
 var one = flag.Bool("one", false, "将query和patch代码生成到同一个文件中")
 var outputFile = flag.String("o", "", "指定输出文件名,所有内容输出到此文件(不按文件分组)")
 var patch2 = flag.Bool("patch2", false, "生成GORM Patch2")
+var patchFull = flag.Bool("patch_full", false, "生成完整的ToMap方法,直接基于PO结构体,不依赖ExportPatch")
 var mapper = flag.String("mapper", "", "struct1.ToXXX,struct2.ToXXX2")
 
 func main() {
@@ -44,7 +45,7 @@ func main() {
 	}
 
 	var isPatch = func() bool {
-		return *patch || *patch2
+		return *patch || *patch2 || *patchFull
 	}
 
 	if *structNames == "" {
@@ -141,6 +142,7 @@ func main() {
 		}
 		if *patch2 {
 			if len(mapFuncs) == 0 {
+				// 没有指定mapper，查找默认的ToPO方法
 				method, ok := lo.Find(si.Methods, func(item gormparse.MethodInfo) bool {
 					return item.Name == "ToPO"
 				})
@@ -149,17 +151,23 @@ func main() {
 				}
 				mapperMethod = append(mapperMethod, [2]string{fmt.Sprintf("%s.%s", trimPtr(method.ReceiverType), method.Name), method.FilePath})
 			} else {
-				f, ok := lo.Find(mapFuncs, func(item MapFunc) bool {
-					return item.StructName == trimPtr(si.Name)
-				})
-				if ok {
+				// 有指定mapper，遍历所有mapper配置
+				for _, f := range mapFuncs {
+					// 首先在当前结构体的方法中查找
 					method, ok := lo.Find(si.Methods, func(item gormparse.MethodInfo) bool {
-						return item.Name == f.FunctionName
+						return item.Name == f.FunctionName && trimPtr(item.ReceiverType) == f.StructName
 					})
 					if !ok {
-						log.Fatalf("[gormgen] 没有找到mapper方法: %s %s", f.StructName, f.FunctionName)
+						// 如果在当前结构体中找不到，在同目录下的其他文件中查找
+						method, ok = findMethodInDirectory(filepath.Dir(targetFile), f.StructName, f.FunctionName)
+						if !ok {
+							// 没找到就跳过，可能是给其他struct的mapper
+							continue
+						}
 					}
 					mapperMethod = append(mapperMethod, [2]string{fmt.Sprintf("%s.%s", trimPtr(method.ReceiverType), method.Name), method.FilePath})
+					// 找到一个就够了，跳出循环
+					break
 				}
 			}
 		}
@@ -313,4 +321,43 @@ func findProjectRoot(startDir string) (string, error) {
 	}
 
 	return "", fmt.Errorf("[gormgen] 未找到包含go.mod的目录")
+}
+
+// findMethodInDirectory 在目录中查找指定结构体的方法
+func findMethodInDirectory(dir, structName, methodName string) (gormparse.MethodInfo, bool) {
+	// 读取目录中的所有.go文件
+	files, err := os.ReadDir(dir)
+	if err != nil {
+		return gormparse.MethodInfo{}, false
+	}
+
+	for _, file := range files {
+		if file.IsDir() || !strings.HasSuffix(file.Name(), ".go") {
+			continue
+		}
+
+		filePath := filepath.Join(dir, file.Name())
+
+		// 解析文件中的结构体
+		structInfo, err := structparse.ParseStruct(filePath, structName)
+		if err != nil {
+			// 如果这个文件中没有该结构体，继续查找下一个文件
+			continue
+		}
+
+		// 在结构体的方法中查找
+		for _, method := range structInfo.Methods {
+			if method.Name == methodName {
+				return gormparse.MethodInfo{
+					Name:         method.Name,
+					ReceiverName: method.ReceiverName,
+					ReceiverType: method.ReceiverType,
+					ReturnType:   method.ReturnType,
+					FilePath:     method.FilePath,
+				}, true
+			}
+		}
+	}
+
+	return gormparse.MethodInfo{}, false
 }

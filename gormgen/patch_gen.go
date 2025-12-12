@@ -32,7 +32,7 @@ func GenPatch(filename string, gormModels []*GormModelInfo, mapperMethod [][2]st
 		for _, item := range mapperMethod {
 			_, code, err := automap.Generate(item[0], "ToPatch", automap.WithFileContext(item[1]))
 			if err != nil {
-				panic("\"生成patch.ToPatch代码失败: %v\", err")
+				panic(fmt.Sprintf("生成patch.ToPatch代码失败:%v", err))
 			}
 			sb.WriteString(code)
 			sb.WriteString("\n")

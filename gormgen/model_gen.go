@@ -61,8 +61,16 @@ func genQueryAndPatch(filename string, models []*gormparse.GormModelInfo, mapper
 		for _, item := range mapperMethod {
 			_, code, err := automap.Generate(item[0], "ToPatch", automap.WithFileContext(item[1]))
 			if err != nil {
-				panic("\"生成patch.ToPatch代码失败: %v\", err")
+				panic(fmt.Sprintf("生成patch.ToPatch代码失败:%v", err))
 			}
+			sb.WriteString(code)
+			sb.WriteString("\n")
+		}
+	}
+	if *patchFull {
+		sb.WriteString("\n// ============ Patch Full ============\n\n")
+		for _, model := range models {
+			code := generateFullPatchMethod(model)
 			sb.WriteString(code)
 			sb.WriteString("\n")
 		}
@@ -239,6 +247,43 @@ func generateModelCode(model *gormparse.GormModelInfo) string {
 	}
 	builder.WriteString(fmt.Sprintf("\t%s: %s{},\n", "fieldType", rawModelName))
 
+	builder.WriteString("}\n")
+
+	return builder.String()
+}
+
+// generateFullPatchMethod 生成完整的ToMap方法，不依赖ExportPatch
+func generateFullPatchMethod(model *gormparse.GormModelInfo) string {
+	var builder strings.Builder
+
+	rawModelName := model.Name
+	receiverVar := strings.ToLower(rawModelName[:1])
+
+	// 生成函数签名
+	builder.WriteString(fmt.Sprintf("func (%s *%s) ToMap() map[string]any {\n", receiverVar, rawModelName))
+
+	// 初始化map
+	fieldCount := 0
+	for _, field := range model.Fields {
+		if field.ColumnName != "" {
+			fieldCount++
+		}
+	}
+	builder.WriteString(fmt.Sprintf("\tvalues := make(map[string]any, %d)\n", fieldCount))
+
+	// 遍历所有字段，添加到map中
+	for _, field := range model.Fields {
+		if field.ColumnName == "" {
+			continue
+		}
+
+		// 生成赋值语句
+		builder.WriteString(fmt.Sprintf("\tvalues[\"%s\"] = %s.%s\n",
+			field.ColumnName, receiverVar, field.Name))
+	}
+
+	// 返回values
+	builder.WriteString("\treturn values\n")
 	builder.WriteString("}\n")
 
 	return builder.String()
