@@ -48,13 +48,35 @@ func (tr *TypeResolver) ResolveType(typeInfo *TypeInfo, currentFile string) erro
 		return nil
 	}
 
+	// 获取当前文件的包名
+	currentPkgName := tr.getCurrentPackageName(currentFile)
+
 	// 对于当前包的类型，直接使用当前文件目录
 	var pkgPath string
 	var err error
+	var useCurrentDir bool
 
+	// 注意: 只有当Package为空或者为"automap"时才认为是当前包
+	// 即使Package名称与当前包名相同,也应该检查import映射
+	// 因为可能有同名包的情况(如persistence/keyauth和biz/keyauth)
 	if typeInfo.Package == "" || typeInfo.Package == "automap" {
 		pkgPath = filepath.Dir(currentFile)
-	} else {
+		useCurrentDir = true
+	} else if typeInfo.Package == currentPkgName {
+		// 对于同名包,需要特殊处理
+		// 先尝试在当前目录查找类型定义
+		dir := filepath.Dir(currentFile)
+		if _, _, err := tr.findTypeDefinition(dir, typeInfo.Name); err == nil {
+			// 在当前目录找到了,使用当前目录
+			pkgPath = dir
+			useCurrentDir = true
+		} else {
+			// 在当前目录没找到,尝试通过import解析
+			useCurrentDir = false
+		}
+	}
+
+	if !useCurrentDir {
 		// 对于外部包，首先确保currentFile是有效的文件路径
 		var parseFile string
 		if currentFile == "" || tr.isDirectory(currentFile) {
@@ -70,6 +92,11 @@ func (tr *TypeResolver) ResolveType(typeInfo *TypeInfo, currentFile string) erro
 			if err := tr.parseImports(parseFile); err != nil {
 				return fmt.Errorf("解析imports失败: %w", err)
 			}
+		}
+
+		// 设置ImportPath: 如果在import映射中找到,就设置完整的import路径
+		if importPath, exists := tr.importMap[typeInfo.Package]; exists {
+			typeInfo.ImportPath = importPath
 		}
 
 		// 根据包名找到实际路径
@@ -125,6 +152,39 @@ func (tr *TypeResolver) isDirectory(path string) bool {
 		return false
 	}
 	return info.IsDir()
+}
+
+// getCurrentPackageName 获取当前文件的包名
+func (tr *TypeResolver) getCurrentPackageName(filePath string) string {
+	if filePath == "" {
+		return ""
+	}
+
+	// 如果是目录,查找第一个go文件
+	if tr.isDirectory(filePath) {
+		files, err := os.ReadDir(filePath)
+		if err != nil {
+			return ""
+		}
+		for _, file := range files {
+			if !file.IsDir() && strings.HasSuffix(file.Name(), ".go") {
+				filePath = filepath.Join(filePath, file.Name())
+				break
+			}
+		}
+	}
+
+	// 解析文件获取包名
+	file, err := parser.ParseFile(tr.fset, filePath, nil, parser.PackageClauseOnly)
+	if err != nil {
+		return ""
+	}
+
+	if file.Name != nil {
+		return file.Name.Name
+	}
+
+	return ""
 }
 
 // parseImports 解析文件的import信息
@@ -204,16 +264,21 @@ func (tr *TypeResolver) resolvePackagePath(packageName, currentFile string) (str
 		return filepath.Dir(currentFile), nil
 	}
 
-	// 对于相同包名的情况，先尝试当前包
+	// 先检查是否在import映射中（这是关键步骤）
+	// 这样可以优先使用import的包,避免与当前包同名时的冲突
+	if importPath, exists := tr.importMap[packageName]; exists {
+		// 将import路径转换为文件系统路径
+		path, err := tr.importPathToFilePath(importPath, currentFile)
+		if err == nil {
+			return path, nil
+		}
+		// 如果转换失败,继续尝试其他方法
+	}
+
+	// 对于相同包名的情况，再尝试当前包
 	dir := filepath.Dir(currentFile)
 	if pkgName := tr.findPackageNameInDir(dir, packageName); pkgName != "" {
 		return dir, nil
-	}
-
-	// 检查是否在import映射中（这是关键步骤）
-	if importPath, exists := tr.importMap[packageName]; exists {
-		// 将import路径转换为文件系统路径
-		return tr.importPathToFilePath(importPath, currentFile)
 	}
 
 	// 对于别名的import，需要反向查找

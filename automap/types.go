@@ -25,13 +25,14 @@ type FuncSignature struct {
 
 // TypeInfo 类型信息
 type TypeInfo struct {
-	Name      string       // 类型名（如"A"）
-	Package   string       // 包名（如""表示当前包）
-	FullName  string       // 完整类型名（如"package.A"）
-	FilePath  string       // 定义文件路径
-	Fields    []FieldInfo  // 字段列表
-	IsPointer bool         // 是否为指针类型
-	Methods   []MethodInfo // 方法列表
+	Name       string       // 类型名（如"A"）
+	Package    string       // 包名（如""表示当前包）
+	FullName   string       // 完整类型名（如"package.A"）
+	ImportPath string       // 完整导入路径（如"github.com/user/proj/pkg"），用于区分同名包
+	FilePath   string       // 定义文件路径
+	Fields     []FieldInfo  // 字段列表
+	IsPointer  bool         // 是否为指针类型
+	Methods    []MethodInfo // 方法列表
 }
 
 func (t *TypeInfo) FieldIter() iter.Seq[string] {

@@ -41,7 +41,11 @@ func (cg *CodeGenerator) Generate(result *ParseResult) string {
 	// 生成返回语句
 	builder.WriteString("\t_=b\n")
 	builder.WriteString("\t_=fields\n")
-	builder.WriteString("\treturn values\n")
+	if cg.result.FuncSignature.HasError {
+		builder.WriteString("\treturn values, nil\n")
+	} else {
+		builder.WriteString("\treturn values\n")
+	}
 	builder.WriteString("}\n")
 
 	generatedCode := builder.String()
@@ -59,7 +63,21 @@ func (cg *CodeGenerator) Generate(result *ParseResult) string {
 // generateFunctionSignature 生成函数签名
 func (cg *CodeGenerator) generateFunctionSignature(genFuncName string, builder *strings.Builder) {
 	aTypeName := cg.result.AType.Name
-	if cg.result.AType.Package != "" && cg.result.AType.Package != cg.result.FuncSignature.PackageName {
+
+	// 判断是否需要添加包名前缀
+	// 1. 如果有ImportPath且不为空,说明是外部导入的包,需要添加包名
+	// 2. 如果Package不为空且与当前包名不同,也需要添加包名
+	// 3. 特殊情况:即使包名相同,如果ImportPath不同,也需要添加包名前缀(用于区分同名包)
+	needPackagePrefix := false
+	if cg.result.AType.ImportPath != "" {
+		// 有ImportPath说明是外部导入的包,需要添加包名
+		needPackagePrefix = true
+	} else if cg.result.AType.Package != "" && cg.result.AType.Package != cg.result.FuncSignature.PackageName {
+		// Package不为空且与当前包名不同
+		needPackagePrefix = true
+	}
+
+	if needPackagePrefix && cg.result.AType.Package != "" {
 		aTypeName = cg.result.AType.Package + "." + aTypeName
 	}
 
@@ -67,11 +85,20 @@ func (cg *CodeGenerator) generateFunctionSignature(genFuncName string, builder *
 	if cg.result.FuncSignature.Receiver != "" {
 		// 生成带接收者的函数签名
 		receiverVar := strings.ToLower(cg.result.FuncSignature.Receiver[:1])
-		builder.WriteString(fmt.Sprintf("func (%s *%s) %s(input *%s) map[string]any {\n",
-			receiverVar, cg.result.FuncSignature.Receiver, genFuncName, aTypeName))
+		if cg.result.FuncSignature.HasError {
+			builder.WriteString(fmt.Sprintf("func (%s *%s) %s(input *%s) (map[string]any, error) {\n",
+				receiverVar, cg.result.FuncSignature.Receiver, genFuncName, aTypeName))
+		} else {
+			builder.WriteString(fmt.Sprintf("func (%s *%s) %s(input *%s) map[string]any {\n",
+				receiverVar, cg.result.FuncSignature.Receiver, genFuncName, aTypeName))
+		}
 	} else {
 		// 生成普通函数签名
-		builder.WriteString(fmt.Sprintf("func %s(input *%s) map[string]any {\n", genFuncName, aTypeName))
+		if cg.result.FuncSignature.HasError {
+			builder.WriteString(fmt.Sprintf("func %s(input *%s) (map[string]any, error) {\n", genFuncName, aTypeName))
+		} else {
+			builder.WriteString(fmt.Sprintf("func %s(input *%s) map[string]any {\n", genFuncName, aTypeName))
+		}
 	}
 }
 
@@ -99,7 +126,15 @@ func (cg *CodeGenerator) generateMapperCall(builder *strings.Builder) {
 		funcName = receiverVar + "." + funcName
 	}
 
-	builder.WriteString(fmt.Sprintf("\tb := %s(input)\n", funcName))
+	if cg.result.FuncSignature.HasError {
+		// 如果mapper函数返回error，需要处理
+		builder.WriteString(fmt.Sprintf("\tb, err := %s(input)\n", funcName))
+		builder.WriteString("\tif err != nil {\n")
+		builder.WriteString("\t\treturn nil, err\n")
+		builder.WriteString("\t}\n")
+	} else {
+		builder.WriteString(fmt.Sprintf("\tb := %s(input)\n", funcName))
+	}
 }
 
 func writeField(sb *strings.Builder, aField string, bFields []string, bField2Column map[string]*FieldInfo, comment string) {
