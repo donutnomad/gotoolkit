@@ -8,12 +8,13 @@ import (
 
 // GormFieldInfo GORM字段信息
 type GormFieldInfo struct {
-	Name       string // 字段名
-	Type       string // 字段类型
-	ColumnName string // 数据库列名
-	IsEmbedded bool   // 是否为嵌入字段
-	SourceType string // 字段来源类型,为空表示来自结构体本身,否则表示来自嵌入的结构体
-	Tag        string // 字段标签
+	Name           string // 字段名
+	Type           string // 字段类型
+	ColumnName     string // 数据库列名
+	IsEmbedded     bool   // 是否为嵌入字段
+	SourceType     string // 字段来源类型,为空表示来自结构体本身,否则表示来自嵌入的结构体
+	Tag            string // 字段标签
+	EmbeddedPrefix string // gorm embedded 字段的 prefix
 }
 
 // GormModelInfo GORM模型信息
@@ -37,11 +38,12 @@ type MethodInfo struct {
 
 // FieldInfo 表示结构体字段信息
 type FieldInfo struct {
-	Name       string // 字段名
-	Type       string // 字段类型
-	PkgPath    string // 类型所在包路径
-	Tag        string // 字段标签
-	SourceType string // 字段来源类型,为空表示来自结构体本身,否则表示来自嵌入的结构体
+	Name           string // 字段名
+	Type           string // 字段类型
+	PkgPath        string // 类型所在包路径
+	Tag            string // 字段标签
+	SourceType     string // 字段来源类型,为空表示来自结构体本身,否则表示来自嵌入的结构体
+	EmbeddedPrefix string // gorm embedded 字段的 prefix
 }
 
 // StructInfo 表示结构体信息
@@ -55,18 +57,32 @@ type StructInfo struct {
 
 // ExtractColumnName 提取列名(从gorm标签或使用默认规则)
 func ExtractColumnName(fieldName, fieldTag string) string {
+	return ExtractColumnNameWithPrefix(fieldName, fieldTag, "")
+}
+
+// ExtractColumnNameWithPrefix 提取列名，支持 embeddedPrefix
+func ExtractColumnNameWithPrefix(fieldName, fieldTag, embeddedPrefix string) string {
+	var columnName string
+
 	if fieldTag == "" {
-		return ToSnakeCase(fieldName)
+		columnName = ToSnakeCase(fieldName)
+	} else {
+		// 解析GORM标签
+		gormTags := parseGormTag(fieldTag)
+		if col, exists := gormTags["column"]; exists {
+			columnName = col
+		} else {
+			// 没有找到column标签,使用默认规则
+			columnName = ToSnakeCase(fieldName)
+		}
 	}
 
-	// 解析GORM标签
-	gormTags := parseGormTag(fieldTag)
-	if columnName, exists := gormTags["column"]; exists {
-		return columnName
+	// 应用 embeddedPrefix
+	if embeddedPrefix != "" {
+		columnName = embeddedPrefix + columnName
 	}
 
-	// 没有找到column标签,使用默认规则
-	return ToSnakeCase(fieldName)
+	return columnName
 }
 
 // ParseGormModel 解析GORM模型
@@ -84,14 +100,15 @@ func ParseGormModel(structInfo *StructInfo) *GormModelInfo {
 		}
 
 		gormField := GormFieldInfo{
-			Name:       field.Name,
-			Type:       field.Type,
-			SourceType: field.SourceType, // 复制来源信息
-			Tag:        field.Tag,        // 保存标签信息
+			Name:           field.Name,
+			Type:           field.Type,
+			SourceType:     field.SourceType,     // 复制来源信息
+			Tag:            field.Tag,            // 保存标签信息
+			EmbeddedPrefix: field.EmbeddedPrefix, // 复制 embeddedPrefix
 		}
 
-		// 解析列名
-		gormField.ColumnName = ExtractColumnName(field.Name, field.Tag)
+		// 解析列名（使用 embeddedPrefix）
+		gormField.ColumnName = ExtractColumnNameWithPrefix(field.Name, field.Tag, field.EmbeddedPrefix)
 
 		gormModel.Fields = append(gormModel.Fields, gormField)
 	}

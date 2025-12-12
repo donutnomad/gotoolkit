@@ -23,11 +23,12 @@ type MethodInfo struct {
 
 // FieldInfo 表示结构体字段信息
 type FieldInfo struct {
-	Name       string // 字段名
-	Type       string // 字段类型
-	PkgPath    string // 类型所在包路径
-	Tag        string // 字段标签
-	SourceType string // 字段来源类型，为空表示来自结构体本身，否则表示来自嵌入的结构体
+	Name           string // 字段名
+	Type           string // 字段类型
+	PkgPath        string // 类型所在包路径
+	Tag            string // 字段标签
+	SourceType     string // 字段来源类型，为空表示来自结构体本身，否则表示来自嵌入的结构体
+	EmbeddedPrefix string // gorm embedded 字段的 prefix，用于列名生成
 }
 
 // StructInfo 表示结构体信息
@@ -77,6 +78,45 @@ func extractImports(filename string) (map[string]string, error) {
 	return imports, nil
 }
 
+// parseGormEmbeddedTag 解析 gorm 标签中的 embedded 和 embeddedPrefix
+// 返回: (是否embedded, embeddedPrefix值)
+func parseGormEmbeddedTag(tag string) (bool, string) {
+	// 查找 gorm 标签
+	gormStart := strings.Index(tag, `gorm:"`)
+	if gormStart == -1 {
+		return false, ""
+	}
+
+	// 安全检查：确保有足够的长度
+	if len(tag) < gormStart+7 { // gorm:" 是6个字符 + 至少1个字符
+		return false, ""
+	}
+
+	gormStart += 6 // 跳过 gorm:"
+	gormEnd := strings.Index(tag[gormStart:], `"`)
+	if gormEnd == -1 {
+		return false, ""
+	}
+
+	gormTag := tag[gormStart : gormStart+gormEnd]
+
+	// 解析标签内的各个部分
+	parts := strings.Split(gormTag, ";")
+	isEmbedded := false
+	embeddedPrefix := ""
+
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "embedded" {
+			isEmbedded = true
+		} else if strings.HasPrefix(part, "embeddedPrefix:") {
+			embeddedPrefix = strings.TrimPrefix(part, "embeddedPrefix:")
+		}
+	}
+
+	return isEmbedded, embeddedPrefix
+}
+
 // shouldExpandEmbeddedField 判断是否应该展开嵌入字段
 func shouldExpandEmbeddedField(fieldType string) bool {
 	// 内置类型不展开
@@ -109,8 +149,16 @@ func shouldExpandEmbeddedField(fieldType string) bool {
 	return true
 }
 
+// maxEmbeddingDepth 最大嵌套深度限制
+const maxEmbeddingDepth = 10
+
 // parseEmbeddedStructWithStack 带栈的递归解析，避免循环引用
 func parseEmbeddedStructWithStack(structType string, stack map[string]bool, imports map[string]string) ([]FieldInfo, error) {
+	// 检查嵌套深度限制
+	if len(stack) >= maxEmbeddingDepth {
+		return nil, fmt.Errorf("嵌入字段深度超过限制 %d: %s", maxEmbeddingDepth, structType)
+	}
+
 	// 检查是否已经在解析栈中（避免循环引用）
 	if stack[structType] {
 		return nil, nil
@@ -278,11 +326,33 @@ func parseStructFieldsWithStackAndImports(fieldList []*ast.Field, stack map[stri
 		} else {
 			// 有名字段
 			for _, name := range field.Names {
-				fields = append(fields, FieldInfo{
-					Name: name.Name,
-					Type: fieldType,
-					Tag:  fieldTag,
-				})
+				// 检查是否有 gorm:"embedded" 标签
+				isEmbedded, embeddedPrefix := parseGormEmbeddedTag(fieldTag)
+				if isEmbedded && shouldExpandEmbeddedField(fieldType) {
+					// 需要展开的 embedded 字段，递归解析
+					embeddedFields, err := parseEmbeddedStructWithStack(fieldType, stack, imports)
+					if err != nil {
+						return nil, err
+					}
+					// 为展开的字段添加 embeddedPrefix
+					for i := range embeddedFields {
+						if embeddedPrefix != "" {
+							// 累加 prefix（支持多层嵌套）
+							if embeddedFields[i].EmbeddedPrefix != "" {
+								embeddedFields[i].EmbeddedPrefix = embeddedPrefix + embeddedFields[i].EmbeddedPrefix
+							} else {
+								embeddedFields[i].EmbeddedPrefix = embeddedPrefix
+							}
+						}
+					}
+					fields = append(fields, embeddedFields...)
+				} else {
+					fields = append(fields, FieldInfo{
+						Name: name.Name,
+						Type: fieldType,
+						Tag:  fieldTag,
+					})
+				}
 			}
 		}
 	}
