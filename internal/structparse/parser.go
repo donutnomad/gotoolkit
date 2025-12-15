@@ -23,12 +23,14 @@ type MethodInfo struct {
 
 // FieldInfo 表示结构体字段信息
 type FieldInfo struct {
-	Name           string // 字段名
-	Type           string // 字段类型
-	PkgPath        string // 类型所在包路径
-	Tag            string // 字段标签
-	SourceType     string // 字段来源类型，为空表示来自结构体本身，否则表示来自嵌入的结构体
-	EmbeddedPrefix string // gorm embedded 字段的 prefix，用于列名生成
+	Name              string // 字段名
+	Type              string // 字段类型
+	PkgPath           string // 类型所在包路径
+	Tag               string // 字段标签
+	SourceType        string // 字段来源类型，为空表示来自结构体本身，否则表示来自嵌入的结构体
+	EmbeddedPrefix    string // gorm embedded 字段的 prefix，用于列名生成
+	EmbeddedFieldName string // 原始 embedded 字段名，如 "Account"
+	EmbeddedFieldType string // 原始 embedded 字段类型，如 "AccountIDColumns"
 }
 
 // StructInfo 表示结构体信息
@@ -334,7 +336,7 @@ func parseStructFieldsWithStackAndImports(fieldList []*ast.Field, stack map[stri
 					if err != nil {
 						return nil, err
 					}
-					// 为展开的字段添加 embeddedPrefix
+					// 为展开的字段添加 embeddedPrefix 和原始 embedded 字段信息
 					for i := range embeddedFields {
 						if embeddedPrefix != "" {
 							// 累加 prefix（支持多层嵌套）
@@ -343,6 +345,11 @@ func parseStructFieldsWithStackAndImports(fieldList []*ast.Field, stack map[stri
 							} else {
 								embeddedFields[i].EmbeddedPrefix = embeddedPrefix
 							}
+						}
+						// 设置原始 embedded 字段信息（只对顶层设置，避免多层嵌套覆盖）
+						if embeddedFields[i].EmbeddedFieldName == "" {
+							embeddedFields[i].EmbeddedFieldName = name.Name
+							embeddedFields[i].EmbeddedFieldType = fieldType
 						}
 					}
 					fields = append(fields, embeddedFields...)

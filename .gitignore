@@ -3,3 +3,12 @@ build
 .claude
 gormgen/gormgen
 *.env
+setterGen/setterGen
+sliceGen/sliceGen
+automap/main
+tempSwag
+approveGen/testdata
+swagGen/testdata
+setterGen/testdata
+gormgen/testdemo
+tempSwag

@@ -54,17 +54,25 @@ func (t *TypeInfo) FieldIter() iter.Seq[string] {
 }
 func (t *TypeInfo) FieldIter2() iter.Seq2[string, *FieldInfo] {
 	return func(yield func(string, *FieldInfo) bool) {
-		for _, item := range t.Fields {
+		for i := range t.Fields {
+			item := &t.Fields[i]
 			if item.IsEmbedded {
-				for _, ef := range item.EmbeddedFields {
-					// orm.Model  DefaultID
-					// => Model.DefaultID
-					if !yield(fmt.Sprintf("%s.%s", lo.LastOrEmpty(strings.Split(item.Type, ".")), ef.Name), &ef) {
+				for j := range item.EmbeddedFields {
+					ef := &item.EmbeddedFields[j]
+					// 对于 gorm:"embedded" 的命名字段，使用字段名（如 Account）
+					// 对于匿名嵌入字段，使用类型名的最后一部分（如 Model）
+					var prefix string
+					if item.EmbeddedFieldName != "" {
+						prefix = item.EmbeddedFieldName
+					} else {
+						prefix = lo.LastOrEmpty(strings.Split(item.Type, "."))
+					}
+					if !yield(fmt.Sprintf("%s.%s", prefix, ef.Name), ef) {
 						return
 					}
 				}
 			} else {
-				if !yield(item.Name, &item) {
+				if !yield(item.Name, item) {
 					return
 				}
 			}
@@ -90,18 +98,21 @@ func NewTypeInfoFromName(fullName string) *TypeInfo {
 
 // FieldInfo 字段信息
 type FieldInfo struct {
-	Name           string          // 字段名
-	Type           string          // 字段类型
-	GormTag        string          // GORM标签
-	JsonTag        string          // GORM标签
-	ColumnName     string          // 数据库列名
-	IsJSONType     bool            // 是否为JSONType
-	JSONFields     []JSONFieldInfo // JSON字段信息
-	SourceType     string          // 来源类型（嵌入字段）
-	IsEmbedded     bool            // 是否为嵌入字段
-	ASTField       *ast.Field      // AST字段节点
-	StructType     *ast.StructType // 字段是所属的结构体
-	EmbeddedFields []FieldInfo
+	Name              string          // 字段名
+	Type              string          // 字段类型
+	GormTag           string          // GORM标签
+	JsonTag           string          // GORM标签
+	ColumnName        string          // 数据库列名
+	IsJSONType        bool            // 是否为JSONType
+	JSONFields        []JSONFieldInfo // JSON字段信息
+	SourceType        string          // 来源类型（嵌入字段）
+	IsEmbedded        bool            // 是否为嵌入字段
+	ASTField          *ast.Field      // AST字段节点
+	StructType        *ast.StructType // 字段是所属的结构体
+	EmbeddedFields    []FieldInfo
+	EmbeddedPrefix    string // gorm embedded 字段的 prefix，用于列名生成
+	EmbeddedFieldName string // 原始 embedded 字段名，如 "Account"
+	EmbeddedFieldType string // 原始 embedded 字段类型，如 "AccountIDColumns"
 }
 
 func (f *FieldInfo) GetFullType() string {
@@ -123,7 +134,7 @@ func (f *FieldInfo) GetJsonName() string {
 }
 
 func (f *FieldInfo) GetColumnName() string {
-	return gormparse.ExtractColumnName(f.Name, "gorm:\""+f.GormTag+"\"")
+	return gormparse.ExtractColumnNameWithPrefix(f.Name, "gorm:\""+f.GormTag+"\"", f.EmbeddedPrefix)
 }
 
 // JSONFieldInfo JSON字段信息

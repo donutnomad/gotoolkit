@@ -122,6 +122,40 @@ func (ma *MappingAnalyzer) analyzeStructLiteral(structLit *ast.CompositeLit) err
 				if err := ma.analyzeEmbeddedStructByName(bField, compLit); err != nil {
 					return err
 				}
+			} else if callExpr, ok := e.Value.(*ast.CallExpr); ok {
+				// 检查是否为方法调用返回结构体，如 Account: entity.Account.ToColumns()
+				// 排除 JSON 类型构造函数
+				if !ma.isJSONTypeConstructor(callExpr) && !ma.isJSONSliceConstructor(callExpr) {
+					// 检查 bField 是否为 B 类型中的 embedded 字段
+					if embeddedField := ma.findEmbeddedFieldByName(bField); embeddedField != nil {
+						// 从 embedded 字段获取子字段列表，构建 BFields
+						var bFields []string
+						for _, ef := range embeddedField.EmbeddedFields {
+							bFields = append(bFields, bField+"."+ef.Name)
+						}
+						if len(bFields) > 0 {
+							relation := MappingRelation{
+								AField:  bField, // 使用 bField 作为 AField（如 Account）
+								BFields: bFields,
+								Order:   ma.currentOrder,
+							}
+							ma.mappingRel = append(ma.mappingRel, relation)
+							ma.currentOrder++
+							continue
+						}
+					}
+				}
+				// 如果不是 embedded 字段的方法调用，按普通方式处理
+				aFields := ma.extractAFieldsFromExpr(e.Value)
+				if len(aFields) > 0 {
+					relation := MappingRelation{
+						AField:  aFields[0],
+						BFields: []string{bField},
+						Order:   ma.currentOrder,
+					}
+					ma.mappingRel = append(ma.mappingRel, relation)
+					ma.currentOrder++
+				}
 			} else {
 				// 普通字段映射
 				aFields := ma.extractAFieldsFromExpr(e.Value)
@@ -201,6 +235,32 @@ func (ma *MappingAnalyzer) findEmbeddedFieldName(embeddedLit *ast.CompositeLit) 
 		}
 	}
 	return ""
+}
+
+// findEmbeddedFieldByName 根据字段名查找 B 类型中的 embedded 字段
+func (ma *MappingAnalyzer) findEmbeddedFieldByName(fieldName string) *FieldInfo {
+	for i := range ma.bType.Fields {
+		field := &ma.bType.Fields[i]
+		if field.IsEmbedded {
+			// 检查 embedded 字段名是否匹配
+			// 对于 gorm:"embedded" 标记的命名字段，使用 EmbeddedFieldName
+			if field.EmbeddedFieldName != "" && field.EmbeddedFieldName == fieldName {
+				return field
+			}
+			// 对于普通命名的 embedded 字段
+			if field.Name != "" && field.Name == fieldName {
+				return field
+			}
+			// 对于匿名 embedded 字段，使用类型名的最后一部分
+			if field.Name == "" {
+				typeName := ma.extractTypeName(field.Type)
+				if typeName == fieldName {
+					return field
+				}
+			}
+		}
+	}
+	return nil
 }
 
 // extractFieldName 提取字段名

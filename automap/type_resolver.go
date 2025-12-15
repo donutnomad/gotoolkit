@@ -631,22 +631,55 @@ func (tr *TypeResolver) parseField(field *ast.Field) ([]FieldInfo, error) {
 			jsonFields = tr.parseJSONFields(field.Type)
 		}
 
+		// 检查是否为 gorm:"embedded" 标签的字段
+		isGormEmbedded, embeddedPrefix := parseGormEmbeddedTag(gormTag)
+
 		fieldInfo := FieldInfo{
-			Name:       fieldName,
-			Type:       fieldType,
-			GormTag:    gormTag,
-			JsonTag:    jsonTag,
-			ColumnName: columnName,
-			IsJSONType: isJSONType,
-			JSONFields: jsonFields,
-			IsEmbedded: len(field.Names) == 0,
-			ASTField:   field,
+			Name:           fieldName,
+			Type:           fieldType,
+			GormTag:        gormTag,
+			JsonTag:        jsonTag,
+			ColumnName:     columnName,
+			IsJSONType:     isJSONType,
+			JSONFields:     jsonFields,
+			IsEmbedded:     len(field.Names) == 0 || isGormEmbedded,
+			ASTField:       field,
+			EmbeddedPrefix: embeddedPrefix,
+		}
+
+		// 如果是 gorm:"embedded" 字段，设置 embedded 字段信息
+		if isGormEmbedded && fieldName != "" {
+			fieldInfo.EmbeddedFieldName = fieldName
+			fieldInfo.EmbeddedFieldType = fieldType
 		}
 
 		result = append(result, fieldInfo)
 	}
 
 	return result, nil
+}
+
+// parseGormEmbeddedTag 解析 gorm 标签中的 embedded 和 embeddedPrefix
+// 返回: (是否embedded, embeddedPrefix值)
+func parseGormEmbeddedTag(gormTag string) (bool, string) {
+	if gormTag == "" {
+		return false, ""
+	}
+
+	parts := strings.Split(gormTag, ";")
+	isEmbedded := false
+	embeddedPrefix := ""
+
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "embedded" {
+			isEmbedded = true
+		} else if strings.HasPrefix(part, "embeddedPrefix:") {
+			embeddedPrefix = strings.TrimPrefix(part, "embeddedPrefix:")
+		}
+	}
+
+	return isEmbedded, embeddedPrefix
 }
 
 // getFieldType 获取字段类型字符串

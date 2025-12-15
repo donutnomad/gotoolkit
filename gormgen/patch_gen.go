@@ -136,9 +136,27 @@ func generateGormPatchStruct(gormModel *GormModelInfo) string {
 	patchName := gormModel.Name + "Patch"
 	sb.WriteString(fmt.Sprintf("type %s struct {", patchName))
 
-	if len(gormModel.Fields) > 0 {
+	if len(gormModel.Fields) > 0 || len(gormModel.EmbeddedGroups) > 0 {
 		sb.WriteString("\n")
+
+		// 收集已处理的 embedded 字段名
+		processedEmbedded := make(map[string]bool)
+
+		// 先处理 embedded 字段组
+		for _, group := range gormModel.EmbeddedGroups {
+			optionType := fmt.Sprintf("mo.Option[%s]", group.FieldType)
+			fieldDef := fmt.Sprintf("\t%s %s // embedded field", group.FieldName, optionType)
+			sb.WriteString(fieldDef + "\n")
+			processedEmbedded[group.FieldName] = true
+		}
+
+		// 处理非 embedded 字段
 		for _, field := range gormModel.Fields {
+			// 跳过属于 embedded 组的字段
+			if field.EmbeddedFieldName != "" {
+				continue
+			}
+
 			optionType := fmt.Sprintf("mo.Option[%s]", field.Type)
 
 			// 生成字段定义
@@ -169,16 +187,42 @@ func generateBuildMethod(gormModel *GormModelInfo) string {
 
 	sb.WriteString(fmt.Sprintf("func (%s %s) Build() map[string]any {", receiverName, patchName))
 
-	if len(gormModel.Fields) == 0 {
+	if len(gormModel.Fields) == 0 && len(gormModel.EmbeddedGroups) == 0 {
 		sb.WriteString("\n\treturn make(map[string]any)\n}")
 		return sb.String()
 	}
 
-	// 计算可能的最大容量（字段数量 + other字段中的项目）
-	fieldCount := len(gormModel.Fields)
-	sb.WriteString(fmt.Sprintf("\n\tvar ret = make(map[string]any, %d+len(%s.other))\n", fieldCount, receiverName))
-
+	// 计算非 embedded 字段数量
+	nonEmbeddedCount := 0
 	for _, field := range gormModel.Fields {
+		if field.EmbeddedFieldName == "" {
+			nonEmbeddedCount++
+		}
+	}
+
+	// 计算可能的最大容量
+	totalFields := nonEmbeddedCount
+	for _, group := range gormModel.EmbeddedGroups {
+		totalFields += len(group.Fields)
+	}
+
+	sb.WriteString(fmt.Sprintf("\n\tvar ret = make(map[string]any, %d+len(%s.other))\n", totalFields, receiverName))
+
+	// 处理 embedded 字段组
+	for _, group := range gormModel.EmbeddedGroups {
+		sb.WriteString(fmt.Sprintf("\tif %s.%s.IsPresent() {\n", receiverName, group.FieldName))
+		sb.WriteString(fmt.Sprintf("\t\t_%s := %s.%s.MustGet()\n", strings.ToLower(group.FieldName), receiverName, group.FieldName))
+		for _, field := range group.Fields {
+			sb.WriteString(fmt.Sprintf("\t\tret[\"%s\"] = _%s.%s\n", field.ColumnName, strings.ToLower(group.FieldName), field.Name))
+		}
+		sb.WriteString("\t}\n")
+	}
+
+	// 处理非 embedded 字段
+	for _, field := range gormModel.Fields {
+		if field.EmbeddedFieldName != "" {
+			continue
+		}
 		sb.WriteString(fmt.Sprintf("\tif %s.%s.IsPresent() {\n", receiverName, field.Name))
 		sb.WriteString(fmt.Sprintf("\t\tret[\"%s\"] = %s.%s.MustGet()\n", field.ColumnName, receiverName, field.Name))
 		sb.WriteString("\t}\n")
@@ -218,7 +262,24 @@ func generateFieldSetterMethods(gormModel *GormModelInfo) string {
 	receiverName := strings.ToLower(string(gormModel.Name[0]))
 	patchName := gormModel.Name + "Patch"
 
+	// 为 embedded 字段生成 setter
+	for _, group := range gormModel.EmbeddedGroups {
+		methodName := "set" + group.FieldName
+		paramName := safeParamNameForGorm(group.FieldName)
+
+		sb.WriteString(fmt.Sprintf("func (%s *%s) %s(%s %s) *%s {\n", receiverName, patchName, methodName, paramName, group.FieldType, patchName))
+		sb.WriteString(fmt.Sprintf("\t%s.%s = mo.Some(%s)\n", receiverName, group.FieldName, paramName))
+		sb.WriteString(fmt.Sprintf("\treturn %s\n", receiverName))
+		sb.WriteString("}\n\n")
+	}
+
+	// 为非 embedded 字段生成 setter
 	for _, field := range gormModel.Fields {
+		// 跳过属于 embedded 组的字段
+		if field.EmbeddedFieldName != "" {
+			continue
+		}
+
 		methodName := "set" + field.Name
 		paramName := safeParamNameForGorm(field.Name)
 
