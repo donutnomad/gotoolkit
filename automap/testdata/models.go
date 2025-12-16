@@ -3,6 +3,7 @@ package testdata
 import (
 	"time"
 
+	"github.com/donutnomad/xchain/caip10"
 	"github.com/samber/lo"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
@@ -1001,5 +1002,154 @@ func (p *FieldOrderPO) ToPO(d *FieldOrderDomain) *FieldOrderPO {
 		TokenName:     d.Token.TokenName,
 		TokenSymbol:   d.Token.TokenSymbol,
 		TokenDecimals: d.Token.TokenDecimals,
+	}
+}
+
+// ============================================================================
+// 测试场景22: EmbeddedOneToMany 映射 (无前缀)
+// 一个输入字段直接映射到嵌入结构体（展开为多个列）
+// ============================================================================
+
+// AccountIDColumns 账户ID列（用于嵌入）
+type AccountIDColumns struct {
+	Namespace string `gorm:"column:namespace"`
+	Reference string `gorm:"column:reference"`
+	Address   string `gorm:"column:address"`
+}
+
+// EmbeddedOneToManyDomain 领域模型
+type EmbeddedOneToManyDomain struct {
+	ID      uint64
+	Name    string
+	Account AccountIDColumns // 直接赋值给嵌入字段
+}
+
+// EmbeddedOneToManyPO 持久化模型
+type EmbeddedOneToManyPO struct {
+	ID      uint64           `gorm:"column:id;primaryKey"`
+	Name    string           `gorm:"column:name"`
+	Account AccountIDColumns `gorm:"embedded"` // 嵌入字段，展开为 namespace, reference, address
+}
+
+// ToPO EmbeddedOneToMany 映射示例（无前缀）
+// Account: d.Account 直接赋值，映射到多个列
+func (p *EmbeddedOneToManyPO) ToPO(d *EmbeddedOneToManyDomain) *EmbeddedOneToManyPO {
+	if d == nil {
+		return nil
+	}
+	return &EmbeddedOneToManyPO{
+		ID:      d.ID,
+		Name:    d.Name,
+		Account: d.Account, // 直接赋值
+	}
+}
+
+// ============================================================================
+// 测试场景23: EmbeddedOneToMany 映射 (带前缀)
+// 一个输入字段直接映射到嵌入结构体，列名带前缀
+// ============================================================================
+
+// EmbeddedPrefixDomain 领域模型
+type EmbeddedPrefixDomain struct {
+	ID      uint64
+	Title   string
+	Account AccountIDColumns // 直接赋值给嵌入字段
+}
+
+// EmbeddedPrefixPO 持久化模型
+type EmbeddedPrefixPO struct {
+	ID      uint64           `gorm:"column:id;primaryKey"`
+	Title   string           `gorm:"column:title"`
+	Account AccountIDColumns `gorm:"embedded;embeddedPrefix:acc_"` // 嵌入字段带前缀
+}
+
+// ToPO EmbeddedOneToMany 映射示例（带前缀）
+// 生成的列名应该是 acc_namespace, acc_reference, acc_address
+func (p *EmbeddedPrefixPO) ToPO(d *EmbeddedPrefixDomain) *EmbeddedPrefixPO {
+	if d == nil {
+		return nil
+	}
+	return &EmbeddedPrefixPO{
+		ID:      d.ID,
+		Title:   d.Title,
+		Account: d.Account, // 直接赋值
+	}
+}
+
+// ============================================================================
+// 测试场景24: EmbeddedOneToMany 映射 (外部包类型)
+// 使用外部包 caip10.AccountIDColumnsCompact 作为嵌入字段类型
+// 验证 structparse 能正确解析外部包的结构体字段
+// ============================================================================
+
+// ExternalEmbeddedDomain 领域模型（使用接口类型）
+type ExternalEmbeddedDomain struct {
+	ID      uint64
+	Name    string
+	Account caip10.AccountID // 接口类型，有 ToColumnsCompact() 方法
+}
+
+// ExternalEmbeddedPO 持久化模型（使用外部包嵌入类型）
+type ExternalEmbeddedPO struct {
+	ID      uint64                         `gorm:"column:id;primaryKey"`
+	Name    string                         `gorm:"column:name"`
+	Account caip10.AccountIDColumnsCompact `gorm:"embedded;embeddedPrefix:account_"` // 外部包类型，展开为 account_chain_id, account_address
+}
+
+// ToPO 外部包 EmbeddedOneToMany 映射示例
+// Account: entity.Account.ToColumnsCompact() 调用接口方法返回外部包类型
+// 生成的列名应该是 account_chain_id, account_address
+func (p *ExternalEmbeddedPO) ToPO(entity *ExternalEmbeddedDomain) *ExternalEmbeddedPO {
+	if entity == nil {
+		return nil
+	}
+	return &ExternalEmbeddedPO{
+		ID:      entity.ID,
+		Name:    entity.Name,
+		Account: entity.Account.ToColumnsCompact(), // 方法调用返回外部包类型
+	}
+}
+
+// ============================================================================
+// 测试场景25: EmbeddedOneToMany 映射 (外部包类型，无前缀)
+// 使用外部包 caip10.AccountIDColumnsCompact 作为嵌入字段类型，但没有 embeddedPrefix
+// 验证不会错误地包含其他嵌入类型（如 gorm.Model）的字段
+// ============================================================================
+
+// ExternalNoPrefixDomain 领域模型（使用接口类型）
+type ExternalNoPrefixDomain struct {
+	ID        uint
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	DeletedAt time.Time
+	Name      string
+	Account   caip10.AccountID // 接口类型，有 ToColumnsCompact() 方法
+}
+
+// ExternalNoPrefixPO 持久化模型（外部包嵌入类型，无前缀）
+// 同时包含 gorm.Model 和 caip10.AccountIDColumnsCompact 两个嵌入类型
+// 验证生成的代码只包含对应嵌入类型的字段
+type ExternalNoPrefixPO struct {
+	gorm.Model                                // 嵌入 gorm.Model（包含 ID, CreatedAt, UpdatedAt, DeletedAt）
+	Name       string                         `gorm:"column:name"`
+	Account    caip10.AccountIDColumnsCompact `gorm:"embedded"` // 外部包类型，无前缀，展开为 chain_id, address
+}
+
+// ToPO 外部包 EmbeddedOneToMany 映射示例（无前缀）
+// 关键测试：Account 的映射只应该包含 chain_id 和 address
+// 不应该包含 gorm.Model 的字段（id, created_at, updated_at, deleted_at）
+func (p *ExternalNoPrefixPO) ToPO(entity *ExternalNoPrefixDomain) *ExternalNoPrefixPO {
+	if entity == nil {
+		return nil
+	}
+	return &ExternalNoPrefixPO{
+		Model: gorm.Model{
+			ID:        entity.ID,
+			CreatedAt: entity.CreatedAt,
+			UpdatedAt: entity.UpdatedAt,
+			DeletedAt: gorm.DeletedAt{Time: entity.DeletedAt},
+		},
+		Name:    entity.Name,
+		Account: entity.Account.ToColumnsCompact(), // 方法调用返回外部包类型
 	}
 }

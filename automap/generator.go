@@ -131,6 +131,8 @@ func (g *Generator2) generateFunctionBody(builder *strings.Builder) {
 				g.generateOneToManyMappings(builder, item.group)
 			case MethodCall:
 				g.generateMethodCallMappings(builder, item.group)
+			case EmbeddedOneToMany:
+				g.generateEmbeddedOneToManyMappings(builder, item.group)
 			}
 		} else {
 			// 单个 OneToOne 映射
@@ -302,6 +304,21 @@ func (g *Generator2) generateMethodCallMappings(builder *strings.Builder, group 
 		columnName := group.Mappings[0].ColumnName
 		builder.WriteString(fmt.Sprintf("\tif %s {\n", strings.Join(conditions, " || ")))
 		builder.WriteString(fmt.Sprintf("\t\tvalues[\"%s\"] = b.%s\n", columnName, group.TargetField))
+		builder.WriteString("\t}\n")
+	}
+}
+
+// generateEmbeddedOneToManyMappings 生成嵌入一对多映射代码
+// 一个输入字段映射到多个输出列（嵌入结构体的所有字段）
+func (g *Generator2) generateEmbeddedOneToManyMappings(builder *strings.Builder, group MappingGroup) {
+	builder.WriteString(fmt.Sprintf("\t// EmbeddedOneToMany: %s -> %s\n", group.SourceField, group.TargetField))
+
+	if len(group.Mappings) > 0 {
+		// 使用源字段作为条件检查
+		builder.WriteString(fmt.Sprintf("\tif fields.%s.IsPresent() {\n", group.SourceField))
+		for _, mapping := range group.Mappings {
+			builder.WriteString(fmt.Sprintf("\t\tvalues[\"%s\"] = b.%s\n", mapping.ColumnName, mapping.TargetPath))
+		}
 		builder.WriteString("\t}\n")
 	}
 }

@@ -26,6 +26,12 @@ const (
 	// MethodCall 方法调用映射：Domain.(多个字段) -> Method() -> PO.Field -> 一个Column
 	// 例如：Domain.Country, Province, City, Street -> GetAddress() -> PO.Address
 	MethodCall MappingType = "method_call"
+
+	// EmbeddedOneToMany 嵌入一对多映射：Domain.Field -> PO.Embedded -> 多个Column
+	// 例如：Domain.Account -> PO.Account (gorm:embedded) -> namespace, reference, address
+	// 这与 OneToMany 的区别是：目标是一个带 gorm:"embedded" 标签的字段
+	// 生成的代码：values["namespace"] = b.Account.Namespace
+	EmbeddedOneToMany MappingType = "embedded_one_to_many"
 )
 
 // FieldMapping2 单个字段的映射关系（新版本）

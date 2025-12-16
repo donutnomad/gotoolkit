@@ -548,10 +548,11 @@ func (m *Mapper) getKeyName(key ast.Expr) string {
 
 // FieldAnalysisInfo 字段分析信息
 type FieldAnalysisInfo struct {
-	ColumnName     string
-	IsEmbedded     bool
-	EmbeddedPrefix string
-	IsJSONType     bool
+	ColumnName       string
+	IsEmbedded       bool
+	EmbeddedPrefix   string
+	EmbeddedTypeName string // 嵌入字段的类型名
+	IsJSONType       bool
 }
 
 // getFieldInfo 获取字段的 GORM 信息
@@ -565,7 +566,7 @@ func (m *Mapper) getFieldInfo(structType *ast.StructType, fieldName string) *Fie
 		if len(field.Names) == 0 {
 			embeddedName := m.extractTypeName(field.Type)
 			if embeddedName == fieldName {
-				info := &FieldAnalysisInfo{IsEmbedded: true}
+				info := &FieldAnalysisInfo{IsEmbedded: true, EmbeddedTypeName: embeddedName}
 				// 检查 embedded 标签
 				if field.Tag != nil {
 					tag := reflect.StructTag(strings.Trim(field.Tag.Value, "`"))
@@ -606,8 +607,10 @@ func (m *Mapper) getFieldInfo(structType *ast.StructType, fieldName string) *Fie
 				if strings.HasPrefix(part, "column:") {
 					info.ColumnName = strings.TrimPrefix(part, "column:")
 				}
-				if strings.HasPrefix(part, "embedded") {
+				if strings.HasPrefix(part, "embedded") && !strings.HasPrefix(part, "embeddedPrefix:") {
 					info.IsEmbedded = true
+					// 获取嵌入字段的类型名
+					info.EmbeddedTypeName = m.extractTypeName(field.Type)
 				}
 				if strings.HasPrefix(part, "embeddedPrefix:") {
 					info.EmbeddedPrefix = strings.TrimPrefix(part, "embeddedPrefix:")
@@ -648,6 +651,10 @@ func (m *Mapper) analyzeFieldValue(fieldName string, value ast.Expr, targetPrefi
 		if compLit, ok := value.(*ast.CompositeLit); ok {
 			return m.analyzeEmbeddedCompositeLit(fieldName, compLit, fieldInfo)
 		}
+		// 处理嵌入字段的直接赋值（非结构体字面量）
+		// 例如: Account: d.Account 或 Account: d.Account.ToColumns()
+		// 这是 EmbeddedOneToMany 映射
+		return m.analyzeEmbeddedOneToManyMapping(fieldName, value, fieldInfo)
 	}
 
 	// 处理 JSONType - datatypes.NewJSONType(...)
@@ -896,6 +903,195 @@ func (m *Mapper) analyzeEmbeddedCompositeLit(fieldName string, compLit *ast.Comp
 		m.result.Groups = append(m.result.Groups, group)
 	}
 	return nil
+}
+
+// analyzeEmbeddedOneToManyMapping 分析嵌入字段的一对多映射
+// 处理场景：Account: d.Account 或 Account: d.Account.ToColumns()
+// 一个输入字段映射到多个输出列（嵌入结构体的所有字段）
+func (m *Mapper) analyzeEmbeddedOneToManyMapping(fieldName string, value ast.Expr, fieldInfo *FieldAnalysisInfo) error {
+	// 提取源路径（如 d.Account 或方法调用）
+	sourcePath, _ := m.extractSourcePath(value)
+	if sourcePath == "" {
+		// 尝试从方法调用中提取
+		if methodInfo := m.extractMethodCallInfo(value); methodInfo != nil {
+			// 从方法名推断字段名
+			sourcePath = inferFieldNameFromMethod(methodInfo.methodName)
+		}
+	}
+	if sourcePath == "" {
+		return nil
+	}
+
+	// 获取嵌入类型的结构体定义
+	embeddedTypeName := fieldInfo.EmbeddedTypeName
+	if embeddedTypeName == "" {
+		return nil
+	}
+
+	// 创建 EmbeddedOneToMany 映射组
+	group := MappingGroup{
+		Type:        EmbeddedOneToMany,
+		TargetField: fieldName,
+		SourceField: sourcePath,
+	}
+
+	// 首先尝试从当前包的 typeSpecs 中获取
+	embeddedTypeSpec := m.typeSpecs[embeddedTypeName]
+	embeddedStructType, ok := m.getStructType(embeddedTypeSpec)
+	if ok {
+		// 从 AST 解析字段
+		m.extractEmbeddedFieldsFromAST(&group, embeddedStructType, fieldName, fieldInfo.EmbeddedPrefix, sourcePath)
+	} else {
+		// 尝试使用 structparse 解析
+		// 先在同目录下查找类型定义
+		if !m.extractEmbeddedFieldsFromStructparse(&group, embeddedTypeName, fieldName, fieldInfo.EmbeddedPrefix, sourcePath) {
+			// 如果没找到，尝试从 PO 结构体本身解析外部包嵌入字段
+			m.extractEmbeddedFieldsFromPOStruct(&group, embeddedTypeName, fieldName, fieldInfo.EmbeddedPrefix, sourcePath)
+		}
+	}
+
+	if len(group.Mappings) > 0 {
+		m.result.Groups = append(m.result.Groups, group)
+	}
+	return nil
+}
+
+// extractEmbeddedFieldsFromAST 从 AST 提取嵌入结构体的字段
+func (m *Mapper) extractEmbeddedFieldsFromAST(group *MappingGroup, structType *ast.StructType, fieldName, prefix, sourcePath string) {
+	for _, field := range structType.Fields.List {
+		for _, name := range field.Names {
+			subFieldName := name.Name
+			// 跳过非导出字段
+			if len(subFieldName) == 0 || subFieldName[0] < 'A' || subFieldName[0] > 'Z' {
+				continue
+			}
+
+			// 获取列名
+			columnName := toSnakeCase(subFieldName)
+			if field.Tag != nil {
+				tag := reflect.StructTag(strings.Trim(field.Tag.Value, "`"))
+				gormTag := tag.Get("gorm")
+				for _, part := range strings.Split(gormTag, ";") {
+					if strings.HasPrefix(part, "column:") {
+						columnName = strings.TrimPrefix(part, "column:")
+					}
+				}
+			}
+
+			// 应用嵌入前缀
+			if prefix != "" {
+				columnName = prefix + columnName
+			}
+
+			mapping := FieldMapping2{
+				SourcePath: sourcePath,
+				TargetPath: fieldName + "." + subFieldName,
+				ColumnName: columnName,
+			}
+			group.Mappings = append(group.Mappings, mapping)
+		}
+	}
+}
+
+// extractEmbeddedFieldsFromStructparse 使用 structparse 解析嵌入结构体的字段（支持外部包）
+// 返回 true 表示找到并解析了类型
+func (m *Mapper) extractEmbeddedFieldsFromStructparse(group *MappingGroup, embeddedTypeName, fieldName, prefix, sourcePath string) bool {
+	// 在同目录下查找嵌入类型
+	dir := filepath.Dir(m.filePath)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") {
+			continue
+		}
+
+		filePath := filepath.Join(dir, entry.Name())
+		structInfo, err := structparse.ParseStruct(filePath, embeddedTypeName)
+		if err != nil {
+			continue
+		}
+
+		// 找到了，提取字段
+		for _, field := range structInfo.Fields {
+			// 跳过非导出字段
+			if len(field.Name) == 0 || field.Name[0] < 'A' || field.Name[0] > 'Z' {
+				continue
+			}
+
+			// 获取列名
+			columnName := gormparse.ExtractColumnNameWithPrefix(field.Name, field.Tag, "")
+
+			// 应用嵌入前缀
+			if prefix != "" {
+				columnName = prefix + columnName
+			}
+
+			mapping := FieldMapping2{
+				SourcePath: sourcePath,
+				TargetPath: fieldName + "." + field.Name,
+				ColumnName: columnName,
+			}
+			group.Mappings = append(group.Mappings, mapping)
+		}
+		return true // 找到后直接返回
+	}
+	return false
+}
+
+// extractEmbeddedFieldsFromPOStruct 从 PO 结构体解析外部包嵌入字段
+// 当嵌入类型来自外部包时，通过解析 PO 结构体本身来获取嵌入字段信息
+// embeddedTypeName: 嵌入类型名（不含包前缀），如 "AccountIDColumnsCompact"
+func (m *Mapper) extractEmbeddedFieldsFromPOStruct(group *MappingGroup, embeddedTypeName, fieldName, prefix, sourcePath string) {
+	// 解析 PO 结构体
+	dir := filepath.Dir(m.filePath)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") {
+			continue
+		}
+
+		filePath := filepath.Join(dir, entry.Name())
+		structInfo, err := structparse.ParseStruct(filePath, m.receiverType)
+		if err != nil {
+			continue
+		}
+
+		// 找到 PO 结构体了，查找来自嵌入字段的字段
+		// 这些字段会有非空的 SourceType 和 EmbeddedPrefix
+		for _, field := range structInfo.Fields {
+			// 跳过非导出字段
+			if len(field.Name) == 0 || field.Name[0] < 'A' || field.Name[0] > 'Z' {
+				continue
+			}
+
+			// 检查这个字段是否来自我们关注的嵌入字段
+			// SourceType 包含包限定的类型名，如 "caip10.AccountIDColumnsCompact"
+			// 需要同时满足：
+			// 1. SourceType 以 embeddedTypeName 结尾（匹配类型名）
+			// 2. EmbeddedPrefix 与期望的前缀匹配
+			if field.SourceType != "" &&
+				field.EmbeddedPrefix == prefix &&
+				(field.SourceType == embeddedTypeName || strings.HasSuffix(field.SourceType, "."+embeddedTypeName)) {
+				// 获取列名（已经包含前缀）
+				columnName := gormparse.ExtractColumnNameWithPrefix(field.Name, field.Tag, field.EmbeddedPrefix)
+
+				mapping := FieldMapping2{
+					SourcePath: sourcePath,
+					TargetPath: fieldName + "." + field.Name,
+					ColumnName: columnName,
+				}
+				group.Mappings = append(group.Mappings, mapping)
+			}
+		}
+		return // 找到 PO 结构体后直接返回
+	}
 }
 
 // analyzeJSONCompositeLit 分析 JSON 结构体字面量

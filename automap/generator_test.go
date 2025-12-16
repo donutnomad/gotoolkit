@@ -726,3 +726,201 @@ func TestGenerate2FieldOrdering(t *testing.T) {
 
 	t.Logf("Generated full code:\n%s", fullCode)
 }
+
+// TestGenerate2EmbeddedOneToMany 测试 EmbeddedOneToMany 映射的代码生成（无前缀）
+func TestGenerate2EmbeddedOneToMany(t *testing.T) {
+	fullCode, funcCode, err := automap.Generate2("testdata/models.go", "EmbeddedOneToManyPO", "ToPO", "ToPatch")
+	if err != nil {
+		t.Fatalf("Generate2 failed: %v", err)
+	}
+
+	// 验证 EmbeddedOneToMany 注释
+	if !strings.Contains(funcCode, "// EmbeddedOneToMany:") {
+		t.Errorf("Missing EmbeddedOneToMany comment")
+	}
+
+	// 验证使用 Account 字段作为条件
+	if !strings.Contains(funcCode, "fields.Account.IsPresent()") {
+		t.Errorf("Missing Account field check")
+	}
+
+	// 验证生成的列赋值（无前缀）
+	expectedMappings := []string{
+		`values["namespace"] = b.Account.Namespace`,
+		`values["reference"] = b.Account.Reference`,
+		`values["address"] = b.Account.Address`,
+	}
+	for _, expected := range expectedMappings {
+		if !strings.Contains(funcCode, expected) {
+			t.Errorf("Missing expected mapping: %s", expected)
+		}
+	}
+
+	// 验证普通字段也正确映射
+	if !strings.Contains(funcCode, `values["id"] = b.ID`) {
+		t.Errorf("Missing ID mapping")
+	}
+	if !strings.Contains(funcCode, `values["name"] = b.Name`) {
+		t.Errorf("Missing Name mapping")
+	}
+
+	t.Logf("Generated full code:\n%s", fullCode)
+}
+
+// TestGenerate2EmbeddedOneToManyWithPrefix 测试 EmbeddedOneToMany 映射的代码生成（带前缀）
+func TestGenerate2EmbeddedOneToManyWithPrefix(t *testing.T) {
+	fullCode, funcCode, err := automap.Generate2("testdata/models.go", "EmbeddedPrefixPO", "ToPO", "ToPatch")
+	if err != nil {
+		t.Fatalf("Generate2 failed: %v", err)
+	}
+
+	// 验证 EmbeddedOneToMany 注释
+	if !strings.Contains(funcCode, "// EmbeddedOneToMany:") {
+		t.Errorf("Missing EmbeddedOneToMany comment")
+	}
+
+	// 验证使用 Account 字段作为条件
+	if !strings.Contains(funcCode, "fields.Account.IsPresent()") {
+		t.Errorf("Missing Account field check")
+	}
+
+	// 验证生成的列赋值（带前缀 acc_）
+	expectedMappings := []string{
+		`values["acc_namespace"] = b.Account.Namespace`,
+		`values["acc_reference"] = b.Account.Reference`,
+		`values["acc_address"] = b.Account.Address`,
+	}
+	for _, expected := range expectedMappings {
+		if !strings.Contains(funcCode, expected) {
+			t.Errorf("Missing expected mapping with prefix: %s", expected)
+		}
+	}
+
+	// 验证普通字段也正确映射
+	if !strings.Contains(funcCode, `values["id"] = b.ID`) {
+		t.Errorf("Missing ID mapping")
+	}
+	if !strings.Contains(funcCode, `values["title"] = b.Title`) {
+		t.Errorf("Missing Title mapping")
+	}
+
+	t.Logf("Generated full code:\n%s", fullCode)
+}
+
+// TestGenerate2ExternalPackageEmbedded 测试外部包 EmbeddedOneToMany 映射的代码生成
+// 使用 caip10.AccountIDColumnsCompact 作为嵌入字段类型
+func TestGenerate2ExternalPackageEmbedded(t *testing.T) {
+	fullCode, funcCode, err := automap.Generate2("testdata/models.go", "ExternalEmbeddedPO", "ToPO", "ToPatch")
+	if err != nil {
+		t.Fatalf("Generate2 failed: %v", err)
+	}
+
+	// 验证 EmbeddedOneToMany 注释
+	if !strings.Contains(funcCode, "// EmbeddedOneToMany:") {
+		t.Errorf("Missing EmbeddedOneToMany comment")
+	}
+
+	// 验证使用 Account 字段作为条件
+	if !strings.Contains(funcCode, "fields.Account.IsPresent()") {
+		t.Errorf("Missing Account field check")
+	}
+
+	// 验证生成的列赋值（带前缀 account_，外部包字段 ChainID 和 Address）
+	// caip10.AccountIDColumnsCompact 有两个字段：
+	// - ChainID (gorm:"column:chain_id")
+	// - Address (gorm:"column:address")
+	expectedMappings := []string{
+		`values["account_chain_id"] = b.Account.ChainID`,
+		`values["account_address"] = b.Account.Address`,
+	}
+	for _, expected := range expectedMappings {
+		if !strings.Contains(funcCode, expected) {
+			t.Errorf("Missing expected mapping for external package type: %s", expected)
+		}
+	}
+
+	// 验证普通字段也正确映射
+	if !strings.Contains(funcCode, `values["id"] = b.ID`) {
+		t.Errorf("Missing ID mapping")
+	}
+	if !strings.Contains(funcCode, `values["name"] = b.Name`) {
+		t.Errorf("Missing Name mapping")
+	}
+
+	t.Logf("Generated full code:\n%s", fullCode)
+}
+
+// TestGenerate2ExternalPackageEmbeddedNoPrefix 测试外部包 EmbeddedOneToMany 映射的代码生成（无前缀）
+// 关键bug修复验证：当嵌入字段无前缀时，不应该错误地包含其他嵌入类型的字段
+func TestGenerate2ExternalPackageEmbeddedNoPrefix(t *testing.T) {
+	fullCode, funcCode, err := automap.Generate2("testdata/models.go", "ExternalNoPrefixPO", "ToPO", "ToPatch")
+	if err != nil {
+		t.Fatalf("Generate2 failed: %v", err)
+	}
+
+	// 验证 EmbeddedOneToMany 注释
+	if !strings.Contains(funcCode, "// EmbeddedOneToMany:") {
+		t.Errorf("Missing EmbeddedOneToMany comment")
+	}
+
+	// 验证使用 Account 字段作为条件
+	if !strings.Contains(funcCode, "fields.Account.IsPresent()") {
+		t.Errorf("Missing Account field check")
+	}
+
+	// 验证生成的列赋值（无前缀，外部包字段 ChainID 和 Address）
+	// caip10.AccountIDColumnsCompact 只有两个字段：ChainID 和 Address
+	expectedMappings := []string{
+		`values["chain_id"] = b.Account.ChainID`,
+		`values["address"] = b.Account.Address`,
+	}
+	for _, expected := range expectedMappings {
+		if !strings.Contains(funcCode, expected) {
+			t.Errorf("Missing expected mapping for external package type: %s", expected)
+		}
+	}
+
+	// 关键验证：Account 的 EmbeddedOneToMany 块中不应该包含 gorm.Model 的字段
+	// 这些字段属于另一个嵌入类型 gorm.Model，不应该出现在 Account 的映射中
+	// 查找 EmbeddedOneToMany: Account 块
+	embeddedStart := strings.Index(funcCode, "// EmbeddedOneToMany: Account")
+	if embeddedStart == -1 {
+		t.Fatalf("EmbeddedOneToMany: Account comment not found")
+	}
+	// 找到这个块的结束位置（下一个注释或 return）
+	embeddedEnd := strings.Index(funcCode[embeddedStart+30:], "\n\t//")
+	if embeddedEnd == -1 {
+		embeddedEnd = strings.Index(funcCode[embeddedStart+30:], "\n\treturn")
+	}
+	if embeddedEnd == -1 {
+		embeddedEnd = len(funcCode) - embeddedStart - 30
+	}
+	accountBlock := funcCode[embeddedStart : embeddedStart+30+embeddedEnd]
+
+	// 验证 Account 块中不包含 gorm.Model 的字段
+	wrongMappings := []string{
+		`values["id"]`,
+		`values["created_at"]`,
+		`values["updated_at"]`,
+		`values["deleted_at"]`,
+		`values["default_id"]`,
+	}
+	for _, wrong := range wrongMappings {
+		if strings.Contains(accountBlock, wrong) {
+			t.Errorf("Account EmbeddedOneToMany block should NOT contain %s (this belongs to gorm.Model)", wrong)
+		}
+	}
+
+	// 验证 gorm.Model 的字段在 Embedded 块中正确映射（而不是在 Account 块中）
+	if !strings.Contains(funcCode, "// Embedded: Model") {
+		t.Errorf("Missing Embedded: Model comment")
+	}
+	if !strings.Contains(funcCode, `values["id"] = b.Model.ID`) {
+		t.Errorf("Missing gorm.Model ID mapping")
+	}
+	if !strings.Contains(funcCode, `values["created_at"] = b.Model.CreatedAt`) {
+		t.Errorf("Missing gorm.Model CreatedAt mapping")
+	}
+
+	t.Logf("Generated full code:\n%s", fullCode)
+}
