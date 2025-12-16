@@ -75,8 +75,20 @@ type ParseResult2 struct {
 	// SourceType 源类型（Domain）
 	SourceType string
 
+	// SourceTypePackage 源类型所在的包名（如果是外部包）
+	// 例如：源类型是 domain.ListingDomain，则 SourceTypePackage = "domain"
+	SourceTypePackage string
+
+	// SourceTypeImportPath 源类型的完整导入路径
+	// 例如："github.com/donutnomad/project/domain"
+	SourceTypeImportPath string
+
 	// TargetType 目标类型（PO）
 	TargetType string
+
+	// TargetColumns 目标类型（PO）的所有数据库列名
+	// 用于验证字段覆盖情况
+	TargetColumns []string
 
 	// Groups 映射组列表
 	Groups []MappingGroup

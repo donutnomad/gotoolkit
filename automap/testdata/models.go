@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"gorm.io/datatypes"
+	"gorm.io/gorm"
 )
 
 // ============================================================================
@@ -579,5 +580,80 @@ func (p *ShippingPO) ToPO(d *ShippingDomain) *ShippingPO {
 		ID:           d.ID,
 		ReceiverName: d.ReceiverName,
 		Address:      addr, // 来源: d.Country, d.Province, d.City, d.Detail
+	}
+}
+
+// ============================================================================
+// 测试场景13: 缺失字段测试 (Missing Fields)
+// ToPO 函数没有映射所有 PO 字段，用于验证 Missing fields 注释生成
+// ============================================================================
+
+// PartialUserDomain 部分用户领域模型
+type PartialUserDomain struct {
+	ID    uint64
+	Name  string
+	Email string
+}
+
+// PartialUserPO 部分用户持久化模型（有些字段在 ToPO 中未映射）
+type PartialUserPO struct {
+	ID        uint64 `gorm:"column:id;primaryKey"`
+	Name      string `gorm:"column:name"`
+	Email     string `gorm:"column:email"`
+	DefaultID uint64 `gorm:"column:default_id"` // 未在 ToPO 中映射
+	DeletedAt int64  `gorm:"column:deleted_at"` // 未在 ToPO 中映射
+}
+
+// ToPO 部分字段映射示例（故意缺少 DefaultID 和 DeletedAt）
+func (p *PartialUserPO) ToPO(d *PartialUserDomain) *PartialUserPO {
+	if d == nil {
+		return nil
+	}
+	return &PartialUserPO{
+		ID:    d.ID,
+		Name:  d.Name,
+		Email: d.Email,
+		// DefaultID 和 DeletedAt 未映射
+	}
+}
+
+// ============================================================================
+// 测试场景14: 使用 gorm.io/gorm.Model 外部包嵌入类型
+// 验证能正确解析第三方包中的结构体字段
+// ============================================================================
+
+// GormUserDomain 使用 gorm.Model 的用户领域模型
+type GormUserDomain struct {
+	ID        uint
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	DeletedAt time.Time
+	Username  string
+	Email     string
+}
+
+// GormUserPO 使用 gorm.Model 的用户持久化模型
+type GormUserPO struct {
+	gorm.Model           // 嵌入 gorm.io/gorm.Model（包含 ID, CreatedAt, UpdatedAt, DeletedAt）
+	Username   string    `gorm:"column:username"`
+	Email      string    `gorm:"column:email"`
+	LastLogin  time.Time `gorm:"column:last_login"` // 未在 ToPO 中映射，用于测试 Missing fields
+}
+
+// ToPO 使用 gorm.Model 的映射示例
+func (p *GormUserPO) ToPO(d *GormUserDomain) *GormUserPO {
+	if d == nil {
+		return nil
+	}
+	return &GormUserPO{
+		Model: gorm.Model{
+			ID:        d.ID,
+			CreatedAt: d.CreatedAt,
+			UpdatedAt: d.UpdatedAt,
+			DeletedAt: gorm.DeletedAt{Time: d.DeletedAt},
+		},
+		Username: d.Username,
+		Email:    d.Email,
+		// LastLogin 未映射
 	}
 }

@@ -766,3 +766,30 @@ finalPrice := price   // varMap["finalPrice"] = "Price"
 ```go
 `json:"order_no"` → JSONPath: order_no
 ```
+
+### 6. 方法调用分析
+
+当检测到 `d.MethodName()` 形式的调用时：
+
+1. 从 `methodDecls` 缓存中查找方法定义
+2. 遍历方法体 AST，提取所有 `recv.Field` 形式的字段访问
+3. 按字母顺序排列字段以保证稳定性
+4. 生成 `MethodCall` 类型的映射组
+
+```go
+// 方法定义缓存
+methodDecls map[string]map[string]*ast.FuncDecl  // receiverType -> methodName -> funcDecl
+
+// 方法调用信息
+methodCallMap map[string]methodCallInfo  // varName -> method call info
+```
+
+支持两种使用方式：
+```go
+// 直接调用
+Address: d.GetAddress()
+
+// 通过局部变量
+addr := d.GetAddress()
+Address: addr
+```

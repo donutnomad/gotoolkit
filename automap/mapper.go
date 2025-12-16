@@ -5,8 +5,13 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
+
+	"github.com/donutnomad/gotoolkit/internal/gormparse"
+	"github.com/donutnomad/gotoolkit/internal/structparse"
 )
 
 // Mapper 映射分析器
@@ -78,6 +83,9 @@ func (m *Mapper) Parse(receiverType, funcName string) (*ParseResult2, error) {
 	// 扁平化所有映射
 	m.flattenMappings()
 
+	// 收集目标类型的所有列名
+	m.collectTargetColumns()
+
 	return m.result, nil
 }
 
@@ -90,8 +98,44 @@ func (m *Mapper) parseFile() error {
 }
 
 // collectTypeSpecs 收集所有类型定义和方法定义
+// 会扫描同包中的所有Go文件，以便找到跨文件的类型定义和方法
 func (m *Mapper) collectTypeSpecs() {
-	for _, decl := range m.file.Decls {
+	// 首先从当前文件收集
+	m.collectTypeSpecsFromFile(m.file)
+
+	// 然后扫描同目录下的其他Go文件
+	dir := filepath.Dir(m.filePath)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+
+		fullPath := filepath.Join(dir, name)
+		if fullPath == m.filePath {
+			continue // 跳过已解析的文件
+		}
+
+		// 解析其他文件
+		otherFile, err := parser.ParseFile(m.fset, fullPath, nil, parser.ParseComments)
+		if err != nil {
+			continue
+		}
+		m.collectTypeSpecsFromFile(otherFile)
+	}
+}
+
+// collectTypeSpecsFromFile 从单个文件收集类型定义和方法定义
+func (m *Mapper) collectTypeSpecsFromFile(file *ast.File) {
+	for _, decl := range file.Decls {
 		switch d := decl.(type) {
 		case *ast.GenDecl:
 			// 收集类型定义
@@ -124,6 +168,7 @@ func (m *Mapper) collectTypeSpecs() {
 
 // analyzeFunction 分析目标函数
 func (m *Mapper) analyzeFunction() error {
+	// 首先在当前文件中查找
 	for _, decl := range m.file.Decls {
 		funcDecl, ok := decl.(*ast.FuncDecl)
 		if !ok {
@@ -140,6 +185,17 @@ func (m *Mapper) analyzeFunction() error {
 
 		// 分析函数体
 		return m.analyzeFuncBody(funcDecl.Body)
+	}
+
+	// 如果当前文件没找到，从收集的方法定义中查找
+	if methods, exists := m.methodDecls[m.receiverType]; exists {
+		if funcDecl, exists := methods[m.funcName]; exists {
+			// 提取参数名和类型
+			m.extractFuncParams(funcDecl)
+
+			// 分析函数体
+			return m.analyzeFuncBody(funcDecl.Body)
+		}
 	}
 
 	return fmt.Errorf("function %s.%s not found", m.receiverType, m.funcName)
@@ -185,9 +241,62 @@ func (m *Mapper) extractFuncParams(funcDecl *ast.FuncDecl) {
 		m.paramName = param.Names[0].Name
 	}
 
-	// 提取源类型
-	m.sourceType = m.extractTypeName(param.Type)
-	m.result.SourceType = m.sourceType
+	// 提取源类型和包信息
+	typeName, pkgName := m.extractTypeNameWithPackage(param.Type)
+	m.sourceType = typeName
+	m.result.SourceType = typeName
+	m.result.SourceTypePackage = pkgName
+
+	// 如果有包名，查找对应的导入路径
+	if pkgName != "" {
+		m.result.SourceTypeImportPath = m.resolveImportPath(pkgName)
+	}
+}
+
+// extractTypeNameWithPackage 提取类型名和包名
+// 返回: (typeName, packageName)
+// 例如: *domain.ListingDomain -> ("ListingDomain", "domain")
+// 例如: *ListingDomain -> ("ListingDomain", "")
+func (m *Mapper) extractTypeNameWithPackage(expr ast.Expr) (string, string) {
+	switch t := expr.(type) {
+	case *ast.Ident:
+		return t.Name, ""
+	case *ast.StarExpr:
+		return m.extractTypeNameWithPackage(t.X)
+	case *ast.SelectorExpr:
+		// pkg.TypeName
+		if pkgIdent, ok := t.X.(*ast.Ident); ok {
+			return t.Sel.Name, pkgIdent.Name
+		}
+		return t.Sel.Name, ""
+	}
+	return "", ""
+}
+
+// resolveImportPath 根据包别名查找导入路径
+func (m *Mapper) resolveImportPath(pkgName string) string {
+	if m.file == nil {
+		return ""
+	}
+
+	for _, imp := range m.file.Imports {
+		// 获取导入路径（去除引号）
+		importPath := strings.Trim(imp.Path.Value, "\"")
+
+		// 检查是否有别名
+		if imp.Name != nil {
+			if imp.Name.Name == pkgName {
+				return importPath
+			}
+		} else {
+			// 没有别名时，使用路径的最后一部分作为包名
+			parts := strings.Split(importPath, "/")
+			if len(parts) > 0 && parts[len(parts)-1] == pkgName {
+				return importPath
+			}
+		}
+	}
+	return ""
 }
 
 // analyzeFuncBody 分析函数体
@@ -964,6 +1073,96 @@ func (m *Mapper) flattenMappings() {
 	}
 }
 
+// collectTargetColumns 收集目标类型（PO）的所有数据库列名
+func (m *Mapper) collectTargetColumns() {
+	// 使用 structparse 解析目标类型，它能正确处理外部包的嵌入类型
+	structInfo, err := structparse.ParseStruct(m.filePath, m.receiverType)
+	if err != nil {
+		// 解析失败时回退到简单方式
+		m.collectTargetColumnsSimple()
+		return
+	}
+
+	// 从解析结果中提取列名
+	for _, field := range structInfo.Fields {
+		columnName := gormparse.ExtractColumnNameWithPrefix(field.Name, field.Tag, field.EmbeddedPrefix)
+		m.result.TargetColumns = append(m.result.TargetColumns, columnName)
+	}
+}
+
+// collectTargetColumnsSimple 简单方式收集列名（仅处理当前文件中的类型）
+func (m *Mapper) collectTargetColumnsSimple() {
+	typeSpec := m.typeSpecs[m.receiverType]
+	if typeSpec == nil {
+		return
+	}
+
+	structType, ok := typeSpec.Type.(*ast.StructType)
+	if !ok {
+		return
+	}
+
+	m.result.TargetColumns = m.collectStructColumns(structType, "")
+}
+
+// collectStructColumns 递归收集结构体的所有列名
+func (m *Mapper) collectStructColumns(structType *ast.StructType, prefix string) []string {
+	var columns []string
+
+	for _, field := range structType.Fields.List {
+		// 处理嵌入字段
+		if len(field.Names) == 0 {
+			embeddedTypeName := m.extractTypeName(field.Type)
+			embeddedTypeSpec := m.typeSpecs[embeddedTypeName]
+
+			// 获取嵌入字段的前缀
+			embeddedPrefix := ""
+			if field.Tag != nil {
+				tag := reflect.StructTag(strings.Trim(field.Tag.Value, "`"))
+				gormTag := tag.Get("gorm")
+				for _, part := range strings.Split(gormTag, ";") {
+					if strings.HasPrefix(part, "embeddedPrefix:") {
+						embeddedPrefix = strings.TrimPrefix(part, "embeddedPrefix:")
+					}
+				}
+			}
+
+			if embeddedTypeSpec != nil {
+				if embeddedStructType, ok := embeddedTypeSpec.Type.(*ast.StructType); ok {
+					subColumns := m.collectStructColumns(embeddedStructType, prefix+embeddedPrefix)
+					columns = append(columns, subColumns...)
+				}
+			}
+			continue
+		}
+
+		// 处理命名字段
+		for _, name := range field.Names {
+			fieldName := name.Name
+			// 跳过非导出字段
+			if len(fieldName) == 0 || fieldName[0] < 'A' || fieldName[0] > 'Z' {
+				continue
+			}
+
+			// 获取列名
+			columnName := toSnakeCase(fieldName)
+			if field.Tag != nil {
+				tag := reflect.StructTag(strings.Trim(field.Tag.Value, "`"))
+				gormTag := tag.Get("gorm")
+				for _, part := range strings.Split(gormTag, ";") {
+					if strings.HasPrefix(part, "column:") {
+						columnName = strings.TrimPrefix(part, "column:")
+					}
+				}
+			}
+
+			columns = append(columns, prefix+columnName)
+		}
+	}
+
+	return columns
+}
+
 // getExprString 获取表达式的字符串表示
 func (m *Mapper) getExprString(expr ast.Expr) string {
 	switch e := expr.(type) {
@@ -981,18 +1180,7 @@ func (m *Mapper) getExprString(expr ast.Expr) string {
 	return ""
 }
 
-// toSnakeCase 驼峰转蛇形
+// toSnakeCase 驼峰转蛇形（使用 gormparse 的实现，正确处理 ID 等缩写）
 func toSnakeCase(s string) string {
-	var result strings.Builder
-	for i, r := range s {
-		if r >= 'A' && r <= 'Z' {
-			if i > 0 {
-				result.WriteByte('_')
-			}
-			result.WriteByte(byte(r - 'A' + 'a'))
-		} else {
-			result.WriteRune(r)
-		}
-	}
-	return result.String()
+	return gormparse.ToSnakeCase(s)
 }

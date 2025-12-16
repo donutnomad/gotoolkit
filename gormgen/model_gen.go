@@ -59,7 +59,7 @@ func genQueryAndPatch(filename string, models []*gormparse.GormModelInfo, mapper
 	} else if *patch2 {
 		sb.WriteString("\n// ============ Patch ============\n\n")
 		for _, item := range mapperMethod {
-			_, code, err := automap.Generate(item[0], "ToPatch", automap.WithFileContext(item[1]))
+			_, code, err := automap.Generate2WithOptions(item[0], "ToPatch", automap.WithFileContext(item[1]))
 			if err != nil {
 				panic(fmt.Sprintf("生成patch.ToPatch代码失败:%v", err))
 			}
