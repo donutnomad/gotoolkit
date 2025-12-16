@@ -102,8 +102,6 @@ func (g *Generator2) generateFunctionSignature(builder *strings.Builder) {
 // generateFunctionBody 生成函数体
 func (g *Generator2) generateFunctionBody(builder *strings.Builder) {
 	if len(g.result.Groups) == 0 {
-		builder.WriteString("\t_ = b\n")
-		builder.WriteString("\t_ = fields\n")
 		return
 	}
 	// 调用 ToPO
@@ -182,40 +180,6 @@ func (g *Generator2) createSortedGenerationItems() []generationItem {
 	return items
 }
 
-// sortGroupsByPosition 按字段位置排序 groups（保留用于其他用途）
-// 对于 OneToOne 类型的组，还需要对其内部的 mappings 排序
-func (g *Generator2) sortGroupsByPosition() []MappingGroup {
-	// 复制 groups 以避免修改原始数据
-	groups := make([]MappingGroup, len(g.result.Groups))
-	copy(groups, g.result.Groups)
-
-	// 按 FieldPosition 排序 groups
-	sort.SliceStable(groups, func(i, j int) bool {
-		return groups[i].FieldPosition < groups[j].FieldPosition
-	})
-
-	// 对 OneToOne 类型的组，对其内部 mappings 也按位置排序
-	for i := range groups {
-		if groups[i].Type == OneToOne {
-			mappings := make([]FieldMapping2, len(groups[i].Mappings))
-			copy(mappings, groups[i].Mappings)
-			sort.SliceStable(mappings, func(a, b int) bool {
-				return mappings[a].FieldPosition < mappings[b].FieldPosition
-			})
-			groups[i].Mappings = mappings
-		}
-	}
-
-	return groups
-}
-
-// generateOneToOneMappings 生成一对一映射代码
-func (g *Generator2) generateOneToOneMappings(builder *strings.Builder, group MappingGroup) {
-	for _, mapping := range group.Mappings {
-		g.writeFieldMapping(builder, mapping.SourcePath, mapping.TargetPath, mapping.ColumnName)
-	}
-}
-
 // generateEmbeddedMappings 生成嵌入字段映射代码
 func (g *Generator2) generateEmbeddedMappings(builder *strings.Builder, group MappingGroup) {
 	builder.WriteString(fmt.Sprintf("\t// Embedded: %s\n", group.TargetField))
@@ -262,7 +226,7 @@ func (g *Generator2) generateManyToOneMappings(builder *strings.Builder, group M
 		}
 		for _, mapping := range mappings {
 			// 从 TargetPath 获取字段路径 (去掉 JSON 字段名前缀)
-			fieldPath := g.getJSONFieldPath(mapping)
+			fieldPath := mapping.GoFieldPath
 			g.writeJSONFieldMapping(builder, mapping.SourcePath, mapping.JSONPath, fieldPath)
 		}
 	}
@@ -350,38 +314,6 @@ func (g *Generator2) groupByJSONPathPrefix(mappings []FieldMapping2) map[string]
 	}
 
 	return result
-}
-
-// getJSONFieldPath 获取 JSON 字段的 Go 字段路径
-func (g *Generator2) getJSONFieldPath(mapping FieldMapping2) string {
-	// 优先使用真实的 Go 字段路径（如果存在）
-	if mapping.GoFieldPath != "" {
-		return mapping.GoFieldPath
-	}
-	// 回退：从 JSONPath 推断（仅用于兼容旧数据）
-	// JSONPath 是 json tag 路径，如 "author.name" 或 "annual_rate_of_return"
-	// 需要转换为 Go 字段路径，如 "Author.Name" 或 "AnnualRateOfReturn"
-	parts := strings.Split(mapping.JSONPath, ".")
-	for i, part := range parts {
-		// 将 snake_case 转换为 PascalCase
-		parts[i] = snakeToPascal(part)
-	}
-	return strings.Join(parts, ".")
-}
-
-// snakeToPascal 将 snake_case 转换为 PascalCase
-// 例如: "annual_rate_of_return" -> "AnnualRateOfReturn"
-func snakeToPascal(s string) string {
-	if s == "" {
-		return s
-	}
-	parts := strings.Split(s, "_")
-	for i, part := range parts {
-		if len(part) > 0 {
-			parts[i] = strings.ToUpper(part[:1]) + part[1:]
-		}
-	}
-	return strings.Join(parts, "")
 }
 
 // validateFieldCoverage 验证字段覆盖情况，返回 Missing fields 注释
