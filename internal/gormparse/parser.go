@@ -8,26 +8,23 @@ import (
 
 // GormFieldInfo GORM字段信息
 type GormFieldInfo struct {
-	Name              string // 字段名
-	Type              string // 字段类型
-	ColumnName        string // 数据库列名
-	IsEmbedded        bool   // 是否为嵌入字段
-	SourceType        string // 字段来源类型,为空表示来自结构体本身,否则表示来自嵌入的结构体
-	Tag               string // 字段标签
-	EmbeddedPrefix    string // gorm embedded 字段的 prefix
-	EmbeddedFieldName string // 原始 embedded 字段名，如 "Account"
-	EmbeddedFieldType string // 原始 embedded 字段类型，如 "AccountIDColumns"
+	Name           string // 字段名
+	Type           string // 字段类型
+	ColumnName     string // 数据库列名
+	IsEmbedded     bool   // 是否为嵌入字段
+	SourceType     string // 字段来源类型,为空表示来自结构体本身,否则表示来自嵌入的结构体
+	Tag            string // 字段标签
+	EmbeddedPrefix string // gorm embedded 字段的 prefix
 }
 
 // GormModelInfo GORM模型信息
 type GormModelInfo struct {
-	Name           string          // 结构体名称
-	PackageName    string          // 包名
-	TableName      string          // 表名
-	Prefix         string          // 生成的结构体前缀
-	Fields         []GormFieldInfo // 字段列表
-	Imports        []string        // 导入的包
-	EmbeddedGroups []EmbeddedGroup // embedded 字段分组
+	Name        string          // 结构体名称
+	PackageName string          // 包名
+	TableName   string          // 表名
+	Prefix      string          // 生成的结构体前缀
+	Fields      []GormFieldInfo // 字段列表
+	Imports     []string        // 导入的包
 }
 
 // MethodInfo 表示方法信息
@@ -41,21 +38,12 @@ type MethodInfo struct {
 
 // FieldInfo 表示结构体字段信息
 type FieldInfo struct {
-	Name              string // 字段名
-	Type              string // 字段类型
-	PkgPath           string // 类型所在包路径
-	Tag               string // 字段标签
-	SourceType        string // 字段来源类型,为空表示来自结构体本身,否则表示来自嵌入的结构体
-	EmbeddedPrefix    string // gorm embedded 字段的 prefix
-	EmbeddedFieldName string // 原始 embedded 字段名，如 "Account"
-	EmbeddedFieldType string // 原始 embedded 字段类型，如 "AccountIDColumns"
-}
-
-// EmbeddedGroup 表示一组来自同一个 embedded 字段的字段
-type EmbeddedGroup struct {
-	FieldName string          // 原始 embedded 字段名，如 "Account"
-	FieldType string          // 原始 embedded 字段类型，如 "AccountIDColumns"
-	Fields    []GormFieldInfo // 属于这个 embedded 字段的所有展开字段
+	Name           string // 字段名
+	Type           string // 字段类型
+	PkgPath        string // 类型所在包路径
+	Tag            string // 字段标签
+	SourceType     string // 字段来源类型,为空表示来自结构体本身,否则表示来自嵌入的结构体
+	EmbeddedPrefix string // gorm embedded 字段的 prefix
 }
 
 // StructInfo 表示结构体信息
@@ -105,9 +93,6 @@ func ParseGormModel(structInfo *StructInfo) *GormModelInfo {
 		Imports:     structInfo.Imports,
 	}
 
-	// 用于构建 EmbeddedGroups 的临时 map
-	embeddedGroupsMap := make(map[string]*EmbeddedGroup)
-
 	for _, field := range structInfo.Fields {
 		// 跳过特殊字段
 		if shouldSkipField(field.Name) {
@@ -115,42 +100,17 @@ func ParseGormModel(structInfo *StructInfo) *GormModelInfo {
 		}
 
 		gormField := GormFieldInfo{
-			Name:              field.Name,
-			Type:              field.Type,
-			SourceType:        field.SourceType,        // 复制来源信息
-			Tag:               field.Tag,               // 保存标签信息
-			EmbeddedPrefix:    field.EmbeddedPrefix,    // 复制 embeddedPrefix
-			EmbeddedFieldName: field.EmbeddedFieldName, // 复制 embedded 字段名
-			EmbeddedFieldType: field.EmbeddedFieldType, // 复制 embedded 字段类型
+			Name:           field.Name,
+			Type:           field.Type,
+			SourceType:     field.SourceType,     // 复制来源信息
+			Tag:            field.Tag,            // 保存标签信息
+			EmbeddedPrefix: field.EmbeddedPrefix, // 复制 embeddedPrefix
 		}
 
 		// 解析列名（使用 embeddedPrefix）
 		gormField.ColumnName = ExtractColumnNameWithPrefix(field.Name, field.Tag, field.EmbeddedPrefix)
 
 		gormModel.Fields = append(gormModel.Fields, gormField)
-
-		// 构建 EmbeddedGroups
-		if field.EmbeddedFieldName != "" {
-			if group, exists := embeddedGroupsMap[field.EmbeddedFieldName]; exists {
-				group.Fields = append(group.Fields, gormField)
-			} else {
-				embeddedGroupsMap[field.EmbeddedFieldName] = &EmbeddedGroup{
-					FieldName: field.EmbeddedFieldName,
-					FieldType: field.EmbeddedFieldType,
-					Fields:    []GormFieldInfo{gormField},
-				}
-			}
-		}
-	}
-
-	// 将 map 转换为 slice（保持顺序：按首次出现的字段顺序）
-	for _, field := range gormModel.Fields {
-		if field.EmbeddedFieldName != "" {
-			if group, exists := embeddedGroupsMap[field.EmbeddedFieldName]; exists {
-				gormModel.EmbeddedGroups = append(gormModel.EmbeddedGroups, *group)
-				delete(embeddedGroupsMap, field.EmbeddedFieldName)
-			}
-		}
 	}
 
 	return gormModel

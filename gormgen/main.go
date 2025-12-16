@@ -123,14 +123,12 @@ func main() {
 		}
 		for _, f := range structInfo.Fields {
 			si.Fields = append(si.Fields, gormparse.FieldInfo{
-				Name:              f.Name,
-				Type:              f.Type,
-				PkgPath:           f.PkgPath,
-				Tag:               f.Tag,
-				SourceType:        f.SourceType,
-				EmbeddedPrefix:    f.EmbeddedPrefix,
-				EmbeddedFieldName: f.EmbeddedFieldName,
-				EmbeddedFieldType: f.EmbeddedFieldType,
+				Name:           f.Name,
+				Type:           f.Type,
+				PkgPath:        f.PkgPath,
+				Tag:            f.Tag,
+				SourceType:     f.SourceType,
+				EmbeddedPrefix: f.EmbeddedPrefix,
 			})
 		}
 		// 复制方法信息

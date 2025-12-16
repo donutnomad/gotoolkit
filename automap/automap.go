@@ -63,46 +63,24 @@ func (am *AutoMap) ParseWithContext(funcName, callerFile string) (*ParseResult, 
 		return nil, fmt.Errorf("验证失败: %w", err)
 	}
 
-	// 解析A和B的嵌套类型（必须在 analyzeMapping 之前，因为分析映射需要使用 embedded 字段信息）
+	// 查找函数定义并分析映射关系
+	mappingRelations, fieldMapping, err := am.analyzeMapping(funcName, aType, bType)
+	if err != nil {
+		return nil, fmt.Errorf("分析映射关系失败: %w", err)
+	}
+
+	// 解析A和B的嵌套类型
 	for idx, item := range aType.Fields {
 		if item.IsEmbedded {
 			item.EmbeddedFields = am.codeGenerator.getEmbeddedDatabaseFieldsWithFile(item.Type, aType.FilePath)
-			// 将父字段的 EmbeddedPrefix 传递给子字段
-			for i := range item.EmbeddedFields {
-				if item.EmbeddedPrefix != "" {
-					// 累加 prefix（支持多层嵌套）
-					if item.EmbeddedFields[i].EmbeddedPrefix != "" {
-						item.EmbeddedFields[i].EmbeddedPrefix = item.EmbeddedPrefix + item.EmbeddedFields[i].EmbeddedPrefix
-					} else {
-						item.EmbeddedFields[i].EmbeddedPrefix = item.EmbeddedPrefix
-					}
-				}
-			}
 			aType.Fields[idx] = item
 		}
 	}
 	for idx, item := range bType.Fields {
 		if item.IsEmbedded {
 			item.EmbeddedFields = am.codeGenerator.getEmbeddedDatabaseFieldsWithFile(item.Type, bType.FilePath)
-			// 将父字段的 EmbeddedPrefix 传递给子字段
-			for i := range item.EmbeddedFields {
-				if item.EmbeddedPrefix != "" {
-					// 累加 prefix（支持多层嵌套）
-					if item.EmbeddedFields[i].EmbeddedPrefix != "" {
-						item.EmbeddedFields[i].EmbeddedPrefix = item.EmbeddedPrefix + item.EmbeddedFields[i].EmbeddedPrefix
-					} else {
-						item.EmbeddedFields[i].EmbeddedPrefix = item.EmbeddedPrefix
-					}
-				}
-			}
 			bType.Fields[idx] = item
 		}
-	}
-
-	// 查找函数定义并分析映射关系
-	mappingRelations, fieldMapping, err := am.analyzeMapping(funcName, aType, bType)
-	if err != nil {
-		return nil, fmt.Errorf("分析映射关系失败: %w", err)
 	}
 
 	// 检查ExportPatch方法
@@ -317,6 +295,8 @@ func (am *AutoMap) getCallerFile() string {
 		if fn == nil {
 			continue
 		}
+
+		fmt.Println(fn.Name())
 
 		// 跳过automap包中的函数
 		if !am.contains(fn.Name(), "automap.") {
