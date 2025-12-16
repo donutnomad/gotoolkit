@@ -441,3 +441,193 @@ func TestGenerate2CrossFileWithMissingFields(t *testing.T) {
 
 	t.Logf("Generated func code:\n%s", funcCode)
 }
+
+// TestGenerate2CustomJSONTag 测试 JSON tag 与 Go 字段名不同的情况
+// 验证生成代码使用真实的 Go 字段名，而不是从 JSON tag 推断
+func TestGenerate2CustomJSONTag(t *testing.T) {
+	fullCode, funcCode, err := automap.Generate2("testdata/models.go", "CustomTagPO", "ToPO", "ToPatch")
+	if err != nil {
+		t.Fatalf("Generate2 failed: %v", err)
+	}
+
+	// 验证使用真实的 Go 字段名而不是 JSON tag 推断的名称
+	// Go 字段名: InnerName, InnerValue, SubInfo.RealFieldA, SubInfo.RealFieldB, SubInfo.RealFieldC
+	// 如果错误地使用 JSON tag 推断，会生成: InnerX, InnerY, SubData.CustomTagA 等
+	mustContain := []string{
+		`field.InnerName`,          // 正确：Go 字段名，而不是 InnerX（从 json:"inner_x" 推断）
+		`field.InnerValue`,         // 正确：Go 字段名，而不是 InnerY（从 json:"inner_y" 推断）
+		`field.SubInfo.RealFieldA`, // 正确：嵌套 Go 字段名，而不是 SubData.CustomTagA
+		`field.SubInfo.RealFieldB`, // 正确：嵌套 Go 字段名
+		`field.SubInfo.RealFieldC`, // 正确：嵌套 Go 字段名
+	}
+	for _, expected := range mustContain {
+		if !strings.Contains(funcCode, expected) {
+			t.Errorf("Expected Go field path %q not found in generated code", expected)
+		}
+	}
+
+	// 验证不包含从 JSON tag 错误推断的名称
+	mustNotContain := []string{
+		`field.InnerX`,     // 错误：从 json:"inner_x" 推断
+		`field.InnerY`,     // 错误：从 json:"inner_y" 推断
+		`field.SubData`,    // 错误：从 json:"sub_data" 推断
+		`field.CustomTagA`, // 错误：从 json:"custom_tag_a" 推断
+		`field.DifferentB`, // 错误：从 json:"different_b" 推断
+	}
+	for _, notExpected := range mustNotContain {
+		if strings.Contains(funcCode, notExpected) {
+			t.Errorf("Unexpected JSON-inferred field path %q found in generated code", notExpected)
+		}
+	}
+
+	// 验证 JSON path 仍然使用正确的 json tag 名称
+	jsonPathMustContain := []string{
+		`set.Set("inner_x"`,               // JSON path 使用 json tag
+		`set.Set("inner_y"`,               // JSON path 使用 json tag
+		`set.Set("sub_data.custom_tag_a"`, // 嵌套 JSON path
+		`set.Set("sub_data.different_b"`,
+		`set.Set("sub_data.another_c"`,
+	}
+	for _, expected := range jsonPathMustContain {
+		if !strings.Contains(funcCode, expected) {
+			t.Errorf("Expected JSON path %q not found in generated code", expected)
+		}
+	}
+
+	t.Logf("Generated full code:\n%s", fullCode)
+}
+
+// TestGenerate2JSONFieldSorting 测试 JSON 字段按字母顺序排序
+func TestGenerate2JSONFieldSorting(t *testing.T) {
+	fullCode, funcCode, err := automap.Generate2("testdata/models.go", "SortTestPO", "ToPO", "ToPatch")
+	if err != nil {
+		t.Fatalf("Generate2 failed: %v", err)
+	}
+
+	// 验证字段按字母顺序排序：Apple, Banana, Mango, Zebra
+	// ToPO 中的顺序是 Zebra, Apple, Mango, Banana（乱序）
+
+	// 找到每个字段在生成代码中的位置
+	applePos := strings.Index(funcCode, "fields.Apple.IsPresent()")
+	bananaPos := strings.Index(funcCode, "fields.Banana.IsPresent()")
+	mangoPos := strings.Index(funcCode, "fields.Mango.IsPresent()")
+	zebraPos := strings.Index(funcCode, "fields.Zebra.IsPresent()")
+
+	if applePos == -1 || bananaPos == -1 || mangoPos == -1 || zebraPos == -1 {
+		t.Fatalf("Not all fields found in generated code")
+	}
+
+	// 验证排序顺序：Apple < Banana < Mango < Zebra
+	if !(applePos < bananaPos && bananaPos < mangoPos && mangoPos < zebraPos) {
+		t.Errorf("Fields are not sorted alphabetically.\n"+
+			"Expected order: Apple(%d) < Banana(%d) < Mango(%d) < Zebra(%d)\n"+
+			"Generated code:\n%s",
+			applePos, bananaPos, mangoPos, zebraPos, funcCode)
+	}
+
+	t.Logf("Generated full code:\n%s", fullCode)
+}
+
+// TestGenerate2JSONNestedSorting 测试嵌套 JSON 字段的分组和排序
+func TestGenerate2JSONNestedSorting(t *testing.T) {
+	fullCode, funcCode, err := automap.Generate2("testdata/models.go", "CustomTagPO", "ToPO", "ToPatch")
+	if err != nil {
+		t.Fatalf("Generate2 failed: %v", err)
+	}
+
+	// 验证分组：顶层字段先出现，然后是 sub_data 分组
+	topLevelPos := strings.Index(funcCode, "fields.InnerName.IsPresent()")
+	subDataCommentPos := strings.Index(funcCode, "// sub_data")
+	subDataFieldPos := strings.Index(funcCode, "fields.SubFieldA.IsPresent()")
+
+	if topLevelPos == -1 || subDataFieldPos == -1 {
+		t.Fatalf("Not all fields found in generated code")
+	}
+
+	// 验证顶层字段在 sub_data 分组之前
+	if subDataCommentPos != -1 && topLevelPos > subDataCommentPos {
+		t.Errorf("Top-level fields should appear before sub_data group")
+	}
+
+	// 验证 sub_data 分组内的字段也是排序的：SubFieldA, SubFieldB, SubFieldC
+	subFieldAPos := strings.Index(funcCode, "fields.SubFieldA.IsPresent()")
+	subFieldBPos := strings.Index(funcCode, "fields.SubFieldB.IsPresent()")
+	subFieldCPos := strings.Index(funcCode, "fields.SubFieldC.IsPresent()")
+
+	if subFieldAPos == -1 || subFieldBPos == -1 || subFieldCPos == -1 {
+		t.Fatalf("Not all sub fields found in generated code")
+	}
+
+	// 验证排序：SubFieldA < SubFieldB < SubFieldC
+	if !(subFieldAPos < subFieldBPos && subFieldBPos < subFieldCPos) {
+		t.Errorf("Sub fields are not sorted alphabetically")
+	}
+
+	t.Logf("Generated full code:\n%s", fullCode)
+}
+
+// TestGenerate2PointerDereference 测试指针解引用
+// 验证能正确解析 *d.Field 的情况
+func TestGenerate2PointerDereference(t *testing.T) {
+	fullCode, funcCode, err := automap.Generate2("testdata/models.go", "PointerPO", "ToPO", "ToPatch")
+	if err != nil {
+		t.Fatalf("Generate2 failed: %v", err)
+	}
+
+	// 验证所有指针解引用的字段都被正确识别
+	expectedMappings := []string{
+		`fields.Name.IsPresent()`, // *entity.Name
+		`values["name"] = b.Name`,
+		`fields.Age.IsPresent()`, // *entity.Age
+		`values["age"] = b.Age`,
+		`fields.Score.IsPresent()`, // entity.Score (普通字段)
+		`values["score"] = b.Score`,
+		`fields.TokenSupply.IsPresent()`, // *entity.TokenSupply
+		`values["token_supply"] = b.TokenSupply`,
+		`fields.MaxAmount.IsPresent()`, // *entity.MaxAmount
+		`values["max_amount"] = b.MaxAmount`,
+	}
+
+	for _, expected := range expectedMappings {
+		if !strings.Contains(funcCode, expected) {
+			t.Errorf("Missing expected mapping: %s", expected)
+		}
+	}
+
+	// 验证 ID 字段也被正确处理
+	if !strings.Contains(funcCode, `fields.ID.IsPresent()`) {
+		t.Errorf("ID field not found")
+	}
+
+	t.Logf("Generated full code:\n%s", fullCode)
+}
+
+// TestParsePointerDereference 测试指针解引用的解析
+func TestParsePointerDereference(t *testing.T) {
+	result, err := automap.Parse("testdata/models.go", "PointerPO", "ToPO")
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+
+	// 验证所有字段都被正确解析
+	expectedFields := map[string]bool{
+		"ID":          false,
+		"Name":        false,
+		"Age":         false,
+		"Score":       false,
+		"TokenSupply": false,
+		"MaxAmount":   false,
+	}
+
+	for _, mapping := range result.AllMappings {
+		if _, exists := expectedFields[mapping.SourcePath]; exists {
+			expectedFields[mapping.SourcePath] = true
+		}
+	}
+
+	for field, found := range expectedFields {
+		if !found {
+			t.Errorf("Field %s was not parsed (pointer dereference may not be working)", field)
+		}
+	}
+}

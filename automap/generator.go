@@ -58,8 +58,6 @@ func (g *Generator2) Generate() (string, string) {
 	g.generateFunctionBody(&funcBuilder)
 
 	// 生成返回语句
-	funcBuilder.WriteString("\t_ = b\n")
-	funcBuilder.WriteString("\t_ = fields\n")
 	funcBuilder.WriteString("\treturn values\n")
 	funcBuilder.WriteString("}\n")
 
@@ -103,6 +101,11 @@ func (g *Generator2) generateFunctionSignature(builder *strings.Builder) {
 
 // generateFunctionBody 生成函数体
 func (g *Generator2) generateFunctionBody(builder *strings.Builder) {
+	if len(g.result.Groups) == 0 {
+		builder.WriteString("\t_ = b\n")
+		builder.WriteString("\t_ = fields\n")
+		return
+	}
 	// 调用 ToPO
 	builder.WriteString(fmt.Sprintf("\tb := %s.%s(input)\n", g.receiverVar, g.result.FuncName))
 
@@ -164,7 +167,20 @@ func (g *Generator2) generateManyToOneMappings(builder *strings.Builder, group M
 	// 按 JSONPath 的前缀分组（用于嵌套结构的注释）
 	prefixGroups := g.groupByJSONPathPrefix(group.Mappings)
 
-	for prefix, mappings := range prefixGroups {
+	// 对前缀进行排序（确保输出顺序稳定）
+	var prefixes []string
+	for prefix := range prefixGroups {
+		prefixes = append(prefixes, prefix)
+	}
+	sort.Strings(prefixes)
+
+	for _, prefix := range prefixes {
+		mappings := prefixGroups[prefix]
+		// 对每个分组内的 mappings 按 SourcePath 排序
+		sort.Slice(mappings, func(i, j int) bool {
+			return mappings[i].SourcePath < mappings[j].SourcePath
+		})
+
 		if prefix != "" {
 			builder.WriteString(fmt.Sprintf("\t\t// %s\n", prefix))
 		}
@@ -245,17 +261,36 @@ func (g *Generator2) groupByJSONPathPrefix(mappings []FieldMapping2) map[string]
 	return result
 }
 
-// getJSONFieldPath 获取 JSON 字段路径
+// getJSONFieldPath 获取 JSON 字段的 Go 字段路径
 func (g *Generator2) getJSONFieldPath(mapping FieldMapping2) string {
-	// JSONPath 是 json tag 路径，如 "author.name"
-	// 需要转换为 Go 字段路径，如 "Author.Name"
+	// 优先使用真实的 Go 字段路径（如果存在）
+	if mapping.GoFieldPath != "" {
+		return mapping.GoFieldPath
+	}
+	// 回退：从 JSONPath 推断（仅用于兼容旧数据）
+	// JSONPath 是 json tag 路径，如 "author.name" 或 "annual_rate_of_return"
+	// 需要转换为 Go 字段路径，如 "Author.Name" 或 "AnnualRateOfReturn"
 	parts := strings.Split(mapping.JSONPath, ".")
+	for i, part := range parts {
+		// 将 snake_case 转换为 PascalCase
+		parts[i] = snakeToPascal(part)
+	}
+	return strings.Join(parts, ".")
+}
+
+// snakeToPascal 将 snake_case 转换为 PascalCase
+// 例如: "annual_rate_of_return" -> "AnnualRateOfReturn"
+func snakeToPascal(s string) string {
+	if s == "" {
+		return s
+	}
+	parts := strings.Split(s, "_")
 	for i, part := range parts {
 		if len(part) > 0 {
 			parts[i] = strings.ToUpper(part[:1]) + part[1:]
 		}
 	}
-	return strings.Join(parts, ".")
+	return strings.Join(parts, "")
 }
 
 // validateFieldCoverage 验证字段覆盖情况，返回 Missing fields 注释

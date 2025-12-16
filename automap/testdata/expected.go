@@ -405,3 +405,51 @@ var ExpectedShippingMapping = ParseResult{
 		},
 	},
 }
+
+// 场景18: JSONSlice + lo.Map 映射 - JSONSlicePO.ToPO
+// datatypes.NewJSONSlice(lo.Map(...)) 和 datatypes.NewJSONSlice(entity.Field) 模式都作为一对一映射处理
+var ExpectedJSONSliceMapping = ParseResult{
+	FuncName:     "ToPO",
+	ReceiverType: "JSONSlicePO",
+	SourceType:   "JSONSliceDomain",
+	TargetType:   "JSONSlicePO",
+	Groups: []MappingGroup{
+		{
+			Type: OneToOne,
+			Mappings: []FieldMapping{
+				{SourcePath: "ID", TargetPath: "ID", ColumnName: "id"},
+				{SourcePath: "Name", TargetPath: "Name", ColumnName: "name"},
+				{SourcePath: "ExchangeRules", TargetPath: "ExchangeRules", ColumnName: "exchange_rules"}, // lo.Map 映射
+				{SourcePath: "Tags", TargetPath: "Tags", ColumnName: "tags"},                             // 直接传入字段
+			},
+		},
+	},
+}
+
+// 场景19: JSONSlice + lo.Map + 方法调用映射 - JSONSliceMethodPO.ToPO
+// datatypes.NewJSONSlice(lo.Map(entity.GetMethod(), ...)) 模式，方法内部使用的字段被识别
+var ExpectedJSONSliceMethodMapping = ParseResult{
+	FuncName:     "ToPO",
+	ReceiverType: "JSONSliceMethodPO",
+	SourceType:   "JSONSliceMethodDomain",
+	TargetType:   "JSONSliceMethodPO",
+	Groups: []MappingGroup{
+		{
+			Type: OneToOne,
+			Mappings: []FieldMapping{
+				{SourcePath: "ID", TargetPath: "ID", ColumnName: "id"},
+				{SourcePath: "Name", TargetPath: "Name", ColumnName: "name"},
+			},
+		},
+		{
+			Type:        MethodCall,
+			TargetField: "Rules",
+			MethodName:  "GetRules",
+			Mappings: []FieldMapping{
+				// GetRules() 内部使用的字段（按字母顺序）
+				{SourcePath: "RuleKey", TargetPath: "Rules", ColumnName: "rules"},
+				{SourcePath: "RuleValue", TargetPath: "Rules", ColumnName: "rules"},
+			},
+		},
+	},
+}

@@ -139,6 +139,28 @@ func TestParseMethodCallWithLocalVar(t *testing.T) {
 	assertParseResult(t, result, expected)
 }
 
+// TestParseJSONSliceLoMap 测试 JSONSlice + lo.Map 映射
+func TestParseJSONSliceLoMap(t *testing.T) {
+	result, err := automap.Parse("testdata/models.go", "JSONSlicePO", "ToPO")
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+
+	expected := testdata.ExpectedJSONSliceMapping
+	assertParseResult(t, result, expected)
+}
+
+// TestParseJSONSliceLoMapMethodCall 测试 JSONSlice + lo.Map + 方法调用映射
+func TestParseJSONSliceLoMapMethodCall(t *testing.T) {
+	result, err := automap.Parse("testdata/models.go", "JSONSliceMethodPO", "ToPO")
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+
+	expected := testdata.ExpectedJSONSliceMethodMapping
+	assertParseResult(t, result, expected)
+}
+
 // assertParseResult 验证解析结果
 func assertParseResult(t *testing.T, result *automap.ParseResult2, expected testdata.ParseResult) {
 	t.Helper()

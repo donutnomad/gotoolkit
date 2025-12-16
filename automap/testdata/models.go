@@ -3,6 +3,7 @@ package testdata
 import (
 	"time"
 
+	"github.com/samber/lo"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
@@ -656,4 +657,290 @@ func (p *GormUserPO) ToPO(d *GormUserDomain) *GormUserPO {
 		Email:    d.Email,
 		// LastLogin 未映射
 	}
+}
+
+// ============================================================================
+// 测试场景15: JSON tag 与 Go 字段名不同
+// 验证生成代码使用真实的 Go 字段名，而不是从 JSON tag 推断
+// ============================================================================
+
+// CustomTagInfo JSON 子结构（Go 字段名和 JSON tag 完全不同）
+type CustomTagInfo struct {
+	RealFieldA string `json:"custom_tag_a"` // Go: RealFieldA, JSON: custom_tag_a
+	RealFieldB int    `json:"different_b"`  // Go: RealFieldB, JSON: different_b
+	RealFieldC bool   `json:"another_c"`    // Go: RealFieldC, JSON: another_c
+}
+
+// NestedCustomInfo 嵌套结构（也有不同的命名）
+type NestedCustomInfo struct {
+	InnerName  string        `json:"inner_x"`  // Go: InnerName, JSON: inner_x
+	InnerValue int           `json:"inner_y"`  // Go: InnerValue, JSON: inner_y
+	SubInfo    CustomTagInfo `json:"sub_data"` // 嵌套的自定义结构
+}
+
+// CustomTagDomain 自定义标签领域模型
+type CustomTagDomain struct {
+	ID         uint64
+	FieldA     string
+	FieldB     int
+	FieldC     bool
+	InnerName  string
+	InnerValue int
+	SubFieldA  string
+	SubFieldB  int
+	SubFieldC  bool
+}
+
+// CustomTagPO 自定义标签持久化模型
+type CustomTagPO struct {
+	ID   uint64                               `gorm:"column:id;primaryKey"`
+	Data datatypes.JSONType[NestedCustomInfo] `gorm:"column:data;type:json"`
+}
+
+// ToPO 自定义标签映射示例
+// 验证生成代码使用 Go 字段名（如 RealFieldA）而不是 JSON tag（如 custom_tag_a）
+func (p *CustomTagPO) ToPO(d *CustomTagDomain) *CustomTagPO {
+	if d == nil {
+		return nil
+	}
+	return &CustomTagPO{
+		ID: d.ID,
+		Data: datatypes.NewJSONType(NestedCustomInfo{
+			InnerName:  d.InnerName,
+			InnerValue: d.InnerValue,
+			SubInfo: CustomTagInfo{
+				RealFieldA: d.SubFieldA,
+				RealFieldB: d.SubFieldB,
+				RealFieldC: d.SubFieldC,
+			},
+		}),
+	}
+}
+
+// ============================================================================
+// 测试场景16: JSON 字段排序测试
+// 验证生成的 JSON 字段按字母顺序排序
+// ============================================================================
+
+// SortTestInfo JSON 子结构（字段名故意乱序）
+type SortTestInfo struct {
+	Zebra  string `json:"zebra"`
+	Apple  string `json:"apple"`
+	Mango  string `json:"mango"`
+	Banana string `json:"banana"`
+}
+
+// SortTestDomain 排序测试领域模型
+type SortTestDomain struct {
+	ID     uint64
+	Zebra  string
+	Apple  string
+	Mango  string
+	Banana string
+}
+
+// SortTestPO 排序测试持久化模型
+type SortTestPO struct {
+	ID   uint64                           `gorm:"column:id;primaryKey"`
+	Info datatypes.JSONType[SortTestInfo] `gorm:"column:info;type:json"`
+}
+
+// ToPO 排序测试映射示例
+// 注意：ToPO 中字段顺序是 Zebra, Apple, Mango, Banana（乱序）
+// 但生成的 ToPatch 代码应该按字母顺序：Apple, Banana, Mango, Zebra
+func (p *SortTestPO) ToPO(d *SortTestDomain) *SortTestPO {
+	if d == nil {
+		return nil
+	}
+	return &SortTestPO{
+		ID: d.ID,
+		Info: datatypes.NewJSONType(SortTestInfo{
+			Zebra:  d.Zebra, // 故意放在第一个
+			Apple:  d.Apple, // 应该排序后在第一个
+			Mango:  d.Mango,
+			Banana: d.Banana,
+		}),
+	}
+}
+
+// ============================================================================
+// 测试场景17: 指针解引用测试
+// 验证能正确解析 *d.Field 和 &d.Field 的情况
+// ============================================================================
+
+// PointerDomain 指针测试领域模型
+type PointerDomain struct {
+	ID          uint64
+	Name        *string // 指针字段
+	Age         *int    // 指针字段
+	Score       int     // 普通字段
+	TokenSupply *uint64 // 指针字段（模拟用户场景）
+	MaxAmount   *int64  // 指针字段
+}
+
+// PointerPO 指针测试持久化模型
+type PointerPO struct {
+	ID          uint64 `gorm:"column:id;primaryKey"`
+	Name        string `gorm:"column:name"`
+	Age         int    `gorm:"column:age"`
+	Score       int    `gorm:"column:score"`
+	TokenSupply uint64 `gorm:"column:token_supply"`
+	MaxAmount   int64  `gorm:"column:max_amount"`
+}
+
+// ToPO 指针解引用映射示例
+// 验证能正确处理 *entity.Field 和 &entity.Field 的情况
+func (p *PointerPO) ToPO(entity *PointerDomain) *PointerPO {
+	if entity == nil {
+		return nil
+	}
+	return &PointerPO{
+		ID:          entity.ID,
+		Name:        *entity.Name,        // 指针解引用
+		Age:         *entity.Age,         // 指针解引用
+		Score:       entity.Score,        // 普通字段
+		TokenSupply: *entity.TokenSupply, // 指针解引用（模拟用户场景）
+		MaxAmount:   *entity.MaxAmount,   // 指针解引用
+	}
+}
+
+// ============================================================================
+// 测试场景18: JSONSlice + lo.Map 映射（一对一）
+// datatypes.NewJSONSlice(lo.Map(entity.Field, func...)) 模式
+// ============================================================================
+
+// ExchangeRule 交易规则
+type ExchangeRule struct {
+	TokenID string `json:"token_id"`
+	Rate    int64  `json:"rate"`
+}
+
+// JSONSliceDomain 领域模型
+type JSONSliceDomain struct {
+	ID            uint64
+	Name          string
+	ExchangeRules []ExchangeRule // 会通过 lo.Map 转换
+	Tags          []string       // 普通切片
+}
+
+// JSONSlicePO 持久化模型
+type JSONSlicePO struct {
+	ID            uint64                            `gorm:"column:id;primaryKey"`
+	Name          string                            `gorm:"column:name"`
+	ExchangeRules datatypes.JSONSlice[ExchangeRule] `gorm:"column:exchange_rules;type:json"`
+	Tags          datatypes.JSONSlice[string]       `gorm:"column:tags;type:json"`
+}
+
+// ToPO JSONSlice + lo.Map 映射示例
+// 验证 datatypes.NewJSONSlice(lo.Map(...)) 被识别为一对一映射
+func (p *JSONSlicePO) ToPO(entity *JSONSliceDomain) *JSONSlicePO {
+	if entity == nil {
+		return nil
+	}
+	return &JSONSlicePO{
+		ID:   entity.ID,
+		Name: entity.Name,
+		ExchangeRules: datatypes.NewJSONSlice(lo.Map(entity.ExchangeRules, func(item ExchangeRule, _ int) ExchangeRule {
+			return ExchangeRule{
+				TokenID: item.TokenID,
+				Rate:    item.Rate,
+			}
+		})),
+		Tags: datatypes.NewJSONSlice(entity.Tags),
+	}
+}
+
+// ============================================================================
+// 测试场景19: JSONSlice + lo.Map + 方法调用映射
+// datatypes.NewJSONSlice(lo.Map(entity.GetMethod(), func...)) 模式
+// 方法内部访问的字段都被视为映射关系
+// ============================================================================
+
+// RuleItem 规则项
+type RuleItem struct {
+	Key   string `json:"key"`
+	Value int    `json:"value"`
+}
+
+// JSONSliceMethodDomain 领域模型（带方法）
+type JSONSliceMethodDomain struct {
+	ID        uint64
+	Name      string
+	RuleKey   string // 被 GetRules 方法使用
+	RuleValue int    // 被 GetRules 方法使用
+	Extra     string // 被 GetRules 方法使用
+}
+
+// GetRules 获取规则列表（内部使用多个字段）
+func (d *JSONSliceMethodDomain) GetRules() []RuleItem {
+	return []RuleItem{
+		{Key: d.RuleKey, Value: d.RuleValue},
+	}
+}
+
+// JSONSliceMethodPO 持久化模型
+type JSONSliceMethodPO struct {
+	ID    uint64                        `gorm:"column:id;primaryKey"`
+	Name  string                        `gorm:"column:name"`
+	Rules datatypes.JSONSlice[RuleItem] `gorm:"column:rules;type:json"`
+}
+
+// ToPO JSONSlice + lo.Map + 方法调用映射示例
+// 验证 datatypes.NewJSONSlice(lo.Map(entity.GetRules(), ...)) 能识别方法内部使用的字段
+func (p *JSONSliceMethodPO) ToPO(entity *JSONSliceMethodDomain) *JSONSliceMethodPO {
+	if entity == nil {
+		return nil
+	}
+	return &JSONSliceMethodPO{
+		ID:   entity.ID,
+		Name: entity.Name,
+		Rules: datatypes.NewJSONSlice(lo.Map(entity.GetRules(), func(item RuleItem, _ int) RuleItem {
+			return RuleItem{
+				Key:   item.Key,
+				Value: item.Value,
+			}
+		})),
+	}
+}
+
+// ============================================================================
+// 测试场景20: 外部包方法调用推断（模拟跨包方法调用）
+// 当方法定义在外部包时，从方法名推断字段名
+// GetExchangeRules -> ExchangeRules
+// ============================================================================
+
+// ExternalMethodDomain 模拟外部包的 Domain（方法定义在"外部"）
+// 注意：这里我们不定义 GetItems 方法，模拟方法在外部包的情况
+type ExternalMethodDomain struct {
+	ID    uint64
+	Name  string
+	Items []string // 假设有 GetItems() 方法返回此字段
+}
+
+// ExternalMethodPO 持久化模型
+type ExternalMethodPO struct {
+	ID    uint64                      `gorm:"column:id;primaryKey"`
+	Name  string                      `gorm:"column:name"`
+	Items datatypes.JSONSlice[string] `gorm:"column:items;type:json"`
+}
+
+// 注意：这个 ToPO 调用了 GetItems()，但该方法未在本包定义
+// automap 应该从方法名 GetItems 推断出字段名 Items
+func (p *ExternalMethodPO) ToPO(entity *ExternalMethodDomain) *ExternalMethodPO {
+	if entity == nil {
+		return nil
+	}
+	return &ExternalMethodPO{
+		ID:   entity.ID,
+		Name: entity.Name,
+		Items: datatypes.NewJSONSlice(lo.Map(entity.GetItems(), func(item string, _ int) string {
+			return item
+		})),
+	}
+}
+
+// GetItems 这个方法定义在这里，但为了测试，我们假设它不存在
+// 实际测试中，automap 应该能处理方法不在本包的情况
+func (d *ExternalMethodDomain) GetItems() []string {
+	return d.Items
 }

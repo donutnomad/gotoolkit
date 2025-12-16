@@ -653,6 +653,49 @@ func (m *Mapper) analyzeFieldValue(fieldName string, value ast.Expr, targetPrefi
 				return m.analyzeJSONCompositeLit(fieldName, compLit, fieldInfo)
 			}
 		}
+
+		// 处理 JSONSlice - datatypes.NewJSONSlice(...)
+		// 支持三种模式：
+		// 1. datatypes.NewJSONSlice(lo.Map(entity.Field, func...)) - lo.Map 转换（字段访问）
+		// 2. datatypes.NewJSONSlice(lo.Map(entity.GetMethod(), func...)) - lo.Map 转换（方法调用）
+		// 3. datatypes.NewJSONSlice(entity.Field) - 直接传入字段
+		if m.isJSONSliceConstructor(callExpr) && len(callExpr.Args) > 0 {
+			arg := callExpr.Args[0]
+
+			// 情况1和2: lo.Map 模式
+			if innerCall, ok := arg.(*ast.CallExpr); ok {
+				// 情况1: lo.Map(entity.Field, func...) - 直接字段访问
+				if sourcePath, ok := m.extractLoMapSource(innerCall); ok && sourcePath != "" {
+					mapping := FieldMapping2{
+						SourcePath: sourcePath,
+						TargetPath: targetPath,
+						ColumnName: fieldInfo.ColumnName,
+					}
+					m.addMapping(mapping, fieldInfo, jsonColumn)
+					return nil
+				}
+
+				// 情况2: lo.Map(entity.GetMethod(), func...) - 方法调用
+				// analyzeMethodCallMapping 已统一处理本包和外部包的情况
+				if methodInfo := m.extractLoMapMethodCall(innerCall); methodInfo != nil {
+					return m.analyzeMethodCallMapping(fieldName, methodInfo, fieldInfo)
+				}
+			}
+
+			// 情况3: 直接传入字段 datatypes.NewJSONSlice(entity.Field)
+			if argSelector, ok := arg.(*ast.SelectorExpr); ok {
+				sourcePath := m.buildSelectorPath(argSelector)
+				if sourcePath != "" {
+					mapping := FieldMapping2{
+						SourcePath: sourcePath,
+						TargetPath: targetPath,
+						ColumnName: fieldInfo.ColumnName,
+					}
+					m.addMapping(mapping, fieldInfo, jsonColumn)
+					return nil
+				}
+			}
+		}
 	}
 
 	// 检查是否是直接的方法调用 d.MethodName()
@@ -692,41 +735,62 @@ func (m *Mapper) analyzeFieldValue(fieldName string, value ast.Expr, targetPrefi
 }
 
 // analyzeMethodCallMapping 分析方法调用映射
+// 支持两种情况：
+// 1. 方法在本包中定义：分析方法体，提取使用的字段
+// 2. 方法在外部包中定义：从方法名推断字段名（如 GetExchangeRules -> ExchangeRules）
 func (m *Mapper) analyzeMethodCallMapping(fieldName string, methodInfo *methodCallInfo, fieldInfo *FieldAnalysisInfo) error {
 	// 查找方法定义
 	methods, exists := m.methodDecls[methodInfo.receiverType]
-	if !exists {
-		return nil
-	}
-	funcDecl, exists := methods[methodInfo.methodName]
-	if !exists {
-		return nil
+	if exists {
+		if funcDecl, methodExists := methods[methodInfo.methodName]; methodExists {
+			// 方法在本包中定义，分析方法体
+			usedFields := m.extractUsedFieldsFromMethod(funcDecl)
+			if len(usedFields) > 0 {
+				// 创建 MethodCall 映射组
+				group := MappingGroup{
+					Type:        MethodCall,
+					TargetField: fieldName,
+					MethodName:  methodInfo.methodName,
+				}
+
+				for _, usedField := range usedFields {
+					mapping := FieldMapping2{
+						SourcePath: usedField,
+						TargetPath: fieldName,
+						ColumnName: fieldInfo.ColumnName,
+					}
+					group.Mappings = append(group.Mappings, mapping)
+				}
+
+				m.result.Groups = append(m.result.Groups, group)
+				return nil
+			}
+		}
 	}
 
-	// 分析方法体，提取使用的字段
-	usedFields := m.extractUsedFieldsFromMethod(funcDecl)
-	if len(usedFields) == 0 {
-		return nil
-	}
-
-	// 创建 MethodCall 映射组
-	group := MappingGroup{
-		Type:        MethodCall,
-		TargetField: fieldName,
-		MethodName:  methodInfo.methodName,
-	}
-
-	for _, usedField := range usedFields {
+	// 方法在外部包中定义或无法分析，尝试从方法名推断字段名
+	// GetExchangeRules -> ExchangeRules
+	sourcePath := inferFieldNameFromMethod(methodInfo.methodName)
+	if sourcePath != "" {
 		mapping := FieldMapping2{
-			SourcePath: usedField,
+			SourcePath: sourcePath,
 			TargetPath: fieldName,
 			ColumnName: fieldInfo.ColumnName,
 		}
-		group.Mappings = append(group.Mappings, mapping)
+		m.addMapping(mapping, fieldInfo, "")
 	}
 
-	m.result.Groups = append(m.result.Groups, group)
 	return nil
+}
+
+// inferFieldNameFromMethod 从方法名推断字段名
+// GetExchangeRules -> ExchangeRules
+// GetFoo -> Foo
+func inferFieldNameFromMethod(methodName string) string {
+	if strings.HasPrefix(methodName, "Get") && len(methodName) > 3 {
+		return methodName[3:]
+	}
+	return methodName
 }
 
 // extractUsedFieldsFromMethod 从方法体中提取使用的字段
@@ -837,7 +901,7 @@ func (m *Mapper) analyzeJSONCompositeLit(fieldName string, compLit *ast.Composit
 		TargetField: fieldName,
 	}
 
-	m.extractJSONMappings(&group, compLit, "", fieldInfo.ColumnName)
+	m.extractJSONMappings(&group, compLit, "", "", fieldInfo.ColumnName)
 
 	if len(group.Mappings) > 0 {
 		m.result.Groups = append(m.result.Groups, group)
@@ -846,7 +910,8 @@ func (m *Mapper) analyzeJSONCompositeLit(fieldName string, compLit *ast.Composit
 }
 
 // extractJSONMappings 递归提取 JSON 映射
-func (m *Mapper) extractJSONMappings(group *MappingGroup, compLit *ast.CompositeLit, jsonPrefix string, columnName string) {
+// goFieldPrefix: Go 字段路径前缀（真实的 Go 字段名）
+func (m *Mapper) extractJSONMappings(group *MappingGroup, compLit *ast.CompositeLit, jsonPrefix string, goFieldPrefix string, columnName string) {
 	// 获取 JSON 类型的字段信息（用于获取 json tag）
 	jsonTypeName := m.extractTypeName(compLit.Type)
 	jsonTypeSpec := m.typeSpecs[jsonTypeName]
@@ -870,9 +935,15 @@ func (m *Mapper) extractJSONMappings(group *MappingGroup, compLit *ast.Composite
 			jsonPath = jsonPrefix + "." + jsonFieldName
 		}
 
+		// 构建 Go 字段路径（真实的 Go 字段名）
+		goFieldPath := subFieldName
+		if goFieldPrefix != "" {
+			goFieldPath = goFieldPrefix + "." + subFieldName
+		}
+
 		// 检查是否是嵌套结构体
 		if nestedCompLit, ok := kv.Value.(*ast.CompositeLit); ok {
-			m.extractJSONMappings(group, nestedCompLit, jsonPath, columnName)
+			m.extractJSONMappings(group, nestedCompLit, jsonPath, goFieldPath, columnName)
 			continue
 		}
 
@@ -887,6 +958,7 @@ func (m *Mapper) extractJSONMappings(group *MappingGroup, compLit *ast.Composite
 			TargetPath:  group.TargetField,
 			ColumnName:  columnName,
 			JSONPath:    jsonPath,
+			GoFieldPath: goFieldPath,
 			ConvertExpr: convertExpr,
 		}
 		group.Mappings = append(group.Mappings, mapping)
@@ -936,6 +1008,85 @@ func (m *Mapper) isJSONTypeConstructor(callExpr *ast.CallExpr) bool {
 	return false
 }
 
+// isJSONSliceConstructor 检查是否是 JSONSlice 构造函数
+func (m *Mapper) isJSONSliceConstructor(callExpr *ast.CallExpr) bool {
+	switch fun := callExpr.Fun.(type) {
+	case *ast.SelectorExpr:
+		// datatypes.NewJSONSlice
+		if fun.Sel.Name == "NewJSONSlice" {
+			return true
+		}
+	case *ast.Ident:
+		// NewJSONSlice
+		if fun.Name == "NewJSONSlice" {
+			return true
+		}
+	}
+	return false
+}
+
+// extractLoMapSource 从 lo.Map 调用中提取源路径
+// lo.Map(entity.Field, func...) -> entity.Field
+// 注意：此函数只处理直接字段访问，方法调用由 extractLoMapSourceInfo 处理
+func (m *Mapper) extractLoMapSource(callExpr *ast.CallExpr) (string, bool) {
+	// 检查是否是 lo.Map(source, func...)
+	sel, ok := callExpr.Fun.(*ast.SelectorExpr)
+	if !ok {
+		return "", false
+	}
+
+	// 检查是否是 lo.Map
+	pkgIdent, ok := sel.X.(*ast.Ident)
+	if !ok || pkgIdent.Name != "lo" {
+		return "", false
+	}
+	if sel.Sel.Name != "Map" {
+		return "", false
+	}
+
+	// 需要至少一个参数
+	if len(callExpr.Args) < 1 {
+		return "", false
+	}
+
+	// 提取第一个参数作为源
+	if argSelector, ok := callExpr.Args[0].(*ast.SelectorExpr); ok {
+		path := m.buildSelectorPath(argSelector)
+		if path != "" {
+			return path, true
+		}
+	}
+
+	return "", false
+}
+
+// extractLoMapMethodCall 从 lo.Map 调用中提取方法调用信息
+// lo.Map(entity.GetMethod(), func...) -> methodCallInfo
+func (m *Mapper) extractLoMapMethodCall(callExpr *ast.CallExpr) *methodCallInfo {
+	// 检查是否是 lo.Map(source, func...)
+	sel, ok := callExpr.Fun.(*ast.SelectorExpr)
+	if !ok {
+		return nil
+	}
+
+	// 检查是否是 lo.Map
+	pkgIdent, ok := sel.X.(*ast.Ident)
+	if !ok || pkgIdent.Name != "lo" {
+		return nil
+	}
+	if sel.Sel.Name != "Map" {
+		return nil
+	}
+
+	// 需要至少一个参数
+	if len(callExpr.Args) < 1 {
+		return nil
+	}
+
+	// 检查第一个参数是否是方法调用
+	return m.extractMethodCallInfo(callExpr.Args[0])
+}
+
 // extractSourcePath 提取源路径和转换表达式
 func (m *Mapper) extractSourcePath(expr ast.Expr) (sourcePath, convertExpr string) {
 	switch e := expr.(type) {
@@ -953,6 +1104,14 @@ func (m *Mapper) extractSourcePath(expr ast.Expr) (sourcePath, convertExpr strin
 			return path, ""
 		}
 		return "", ""
+
+	case *ast.StarExpr:
+		// 指针解引用: *d.Field 或 *entity.Field
+		return m.extractSourcePath(e.X)
+
+	case *ast.UnaryExpr:
+		// 一元表达式: &d.Field（取地址）或其他一元操作
+		return m.extractSourcePath(e.X)
 	}
 	return "", ""
 }

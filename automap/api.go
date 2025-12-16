@@ -42,8 +42,11 @@ type FieldMapping2 struct {
 	// ConvertExpr 转换表达式，如 ".Unix()", "decimal.NewFromBigInt(...)"
 	ConvertExpr string
 
-	// JSONPath JSON内部路径（仅ManyToOne时有效），如 "author.name"
+	// JSONPath JSON内部路径（仅ManyToOne时有效），如 "author.name"（json tag 路径）
 	JSONPath string
+
+	// GoFieldPath JSON内部Go字段路径（仅ManyToOne时有效），如 "Author.Name"（真实Go字段名）
+	GoFieldPath string
 }
 
 // MappingGroup 映射组（表示一组相关的映射）
