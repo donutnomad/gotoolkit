@@ -102,6 +102,7 @@ func (g *Generator2) generateFunctionSignature(builder *strings.Builder) {
 // generateFunctionBody 生成函数体
 func (g *Generator2) generateFunctionBody(builder *strings.Builder) {
 	if len(g.result.Groups) == 0 {
+		builder.WriteString("\tvar values map[string]any\n")
 		return
 	}
 	// 调用 ToPO

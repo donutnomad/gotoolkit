@@ -1135,6 +1135,10 @@ type ExternalNoPrefixPO struct {
 	Account    caip10.AccountIDColumnsCompact `gorm:"embedded"` // 外部包类型，无前缀，展开为 chain_id, address
 }
 
+func (p *ExternalNoPrefixPO) ToPO2(entity *ExternalNoPrefixDomain) *ExternalNoPrefixPO {
+	return &ExternalNoPrefixPO{}
+}
+
 // ToPO 外部包 EmbeddedOneToMany 映射示例（无前缀）
 // 关键测试：Account 的映射只应该包含 chain_id 和 address
 // 不应该包含 gorm.Model 的字段（id, created_at, updated_at, deleted_at）

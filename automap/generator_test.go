@@ -924,3 +924,14 @@ func TestGenerate2ExternalPackageEmbeddedNoPrefix(t *testing.T) {
 
 	t.Logf("Generated full code:\n%s", fullCode)
 }
+
+// 测试映射关系为空时候的代码
+func TestGenerate2Empty(t *testing.T) {
+	_, funcCode, err := automap.Generate2("testdata/models.go", "ExternalNoPrefixPO", "ToPO2", "ToPatch")
+	if err != nil {
+		t.Fatalf("Generate2 failed: %v", err)
+	}
+	if !strings.Contains(funcCode, "\tvar values map[string]any\n\treturn values") {
+		t.Errorf("Missing return statement")
+	}
+}
