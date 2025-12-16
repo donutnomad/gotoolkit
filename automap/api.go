@@ -47,6 +47,9 @@ type FieldMapping2 struct {
 
 	// GoFieldPath JSON内部Go字段路径（仅ManyToOne时有效），如 "Author.Name"（真实Go字段名）
 	GoFieldPath string
+
+	// FieldPosition 在 PO 结构体中的字段位置（用于排序）
+	FieldPosition int
 }
 
 // MappingGroup 映射组（表示一组相关的映射）
@@ -62,6 +65,9 @@ type MappingGroup struct {
 
 	// MethodName 方法名（对于MethodCall，这是调用的方法名）
 	MethodName string
+
+	// FieldPosition 在 PO 结构体中的字段位置（用于排序，确保生成代码顺序与 PO 定义一致）
+	FieldPosition int
 
 	// Mappings 具体的字段映射列表
 	Mappings []FieldMapping2
@@ -92,6 +98,10 @@ type ParseResult2 struct {
 	// TargetColumns 目标类型（PO）的所有数据库列名
 	// 用于验证字段覆盖情况
 	TargetColumns []string
+
+	// TargetFieldPositions 目标类型字段位置映射：列名 -> 位置
+	// 用于生成代码时按 PO 结构体字段顺序排序
+	TargetFieldPositions map[string]int
 
 	// Groups 映射组列表
 	Groups []MappingGroup

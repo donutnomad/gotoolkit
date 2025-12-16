@@ -631,3 +631,98 @@ func TestParsePointerDereference(t *testing.T) {
 		}
 	}
 }
+
+// TestGenerate2FieldOrdering 测试字段顺序
+// 验证生成的 ToPatch 方法字段顺序与 PO 结构体定义顺序一致
+func TestGenerate2FieldOrdering(t *testing.T) {
+	fullCode, funcCode, err := automap.Generate2("testdata/models.go", "FieldOrderPO", "ToPO", "ToPatch")
+	if err != nil {
+		t.Fatalf("Generate2 failed: %v", err)
+	}
+
+	// PO 结构体字段顺序：
+	// ID, Name, TokenAddress, TokenName, TokenSymbol, TokenDecimals, Status, FailedReason, CreatedAt
+	//
+	// ToPO 中赋值顺序（故意乱序）：
+	// ID, Name, Status, FailedReason, CreatedAt, TokenAddress, TokenName, TokenSymbol, TokenDecimals
+	//
+	// 生成的 ToPatch 代码应该按 PO 结构体顺序输出
+
+	// 获取各字段在生成代码中的位置
+	idPos := strings.Index(funcCode, `values["id"]`)
+	namePos := strings.Index(funcCode, `values["name"]`)
+	tokenAddressPos := strings.Index(funcCode, `values["token_address"]`)
+	tokenNamePos := strings.Index(funcCode, `values["token_name"]`)
+	tokenSymbolPos := strings.Index(funcCode, `values["token_symbol"]`)
+	tokenDecimalsPos := strings.Index(funcCode, `values["token_decimals"]`)
+	statusPos := strings.Index(funcCode, `values["status"]`)
+	failedReasonPos := strings.Index(funcCode, `values["failed_reason"]`)
+	createdAtPos := strings.Index(funcCode, `values["created_at"]`)
+
+	// 验证所有字段都存在
+	positions := map[string]int{
+		"id":             idPos,
+		"name":           namePos,
+		"token_address":  tokenAddressPos,
+		"token_name":     tokenNamePos,
+		"token_symbol":   tokenSymbolPos,
+		"token_decimals": tokenDecimalsPos,
+		"status":         statusPos,
+		"failed_reason":  failedReasonPos,
+		"created_at":     createdAtPos,
+	}
+	for field, pos := range positions {
+		if pos == -1 {
+			t.Errorf("Field %q not found in generated code", field)
+		}
+	}
+
+	// 验证字段顺序与 PO 结构体定义一致
+	// PO 结构体顺序: id < name < token_address < token_name < token_symbol < token_decimals < status < failed_reason < created_at
+	//
+	// 关键验证：Token 相关字段应该在 Status 之前
+	// （在 ToPO 中 Token 字段是最后赋值的，但在 PO 结构体中 Token 字段在 Status 之前）
+	if tokenAddressPos > statusPos {
+		t.Errorf("Field ordering incorrect: token_address(%d) should appear before status(%d)", tokenAddressPos, statusPos)
+	}
+	if tokenNamePos > statusPos {
+		t.Errorf("Field ordering incorrect: token_name(%d) should appear before status(%d)", tokenNamePos, statusPos)
+	}
+	if tokenSymbolPos > statusPos {
+		t.Errorf("Field ordering incorrect: token_symbol(%d) should appear before status(%d)", tokenSymbolPos, statusPos)
+	}
+	if tokenDecimalsPos > statusPos {
+		t.Errorf("Field ordering incorrect: token_decimals(%d) should appear before status(%d)", tokenDecimalsPos, statusPos)
+	}
+
+	// 验证 FailedReason 应该在 CreatedAt 之前（按 PO 结构体顺序）
+	if failedReasonPos > createdAtPos {
+		t.Errorf("Field ordering incorrect: failed_reason(%d) should appear before created_at(%d)", failedReasonPos, createdAtPos)
+	}
+
+	// 验证完整顺序链
+	expectedOrder := []struct {
+		name string
+		pos  int
+	}{
+		{"id", idPos},
+		{"name", namePos},
+		{"token_address", tokenAddressPos},
+		{"token_name", tokenNamePos},
+		{"token_symbol", tokenSymbolPos},
+		{"token_decimals", tokenDecimalsPos},
+		{"status", statusPos},
+		{"failed_reason", failedReasonPos},
+		{"created_at", createdAtPos},
+	}
+
+	for i := 0; i < len(expectedOrder)-1; i++ {
+		if expectedOrder[i].pos > expectedOrder[i+1].pos {
+			t.Errorf("Field ordering violated: %s(%d) should appear before %s(%d)",
+				expectedOrder[i].name, expectedOrder[i].pos,
+				expectedOrder[i+1].name, expectedOrder[i+1].pos)
+		}
+	}
+
+	t.Logf("Generated full code:\n%s", fullCode)
+}

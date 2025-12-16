@@ -116,21 +116,95 @@ func (g *Generator2) generateFunctionBody(builder *strings.Builder) {
 	totalMappings := len(g.result.AllMappings)
 	builder.WriteString(fmt.Sprintf("\tvalues := make(map[string]any, %d)\n", totalMappings))
 
-	// 按类型生成映射代码
-	for _, group := range g.result.Groups {
-		switch group.Type {
-		case OneToOne:
-			g.generateOneToOneMappings(builder, group)
-		case Embedded:
-			g.generateEmbeddedMappings(builder, group)
-		case ManyToOne:
-			g.generateManyToOneMappings(builder, group)
-		case OneToMany:
-			g.generateOneToManyMappings(builder, group)
-		case MethodCall:
-			g.generateMethodCallMappings(builder, group)
+	// 创建生成项列表，并按字段位置排序
+	items := g.createSortedGenerationItems()
+
+	// 按顺序生成代码
+	for _, item := range items {
+		if item.isGroup {
+			switch item.group.Type {
+			case Embedded:
+				g.generateEmbeddedMappings(builder, item.group)
+			case ManyToOne:
+				g.generateManyToOneMappings(builder, item.group)
+			case OneToMany:
+				g.generateOneToManyMappings(builder, item.group)
+			case MethodCall:
+				g.generateMethodCallMappings(builder, item.group)
+			}
+		} else {
+			// 单个 OneToOne 映射
+			g.writeFieldMapping(builder, item.mapping.SourcePath, item.mapping.TargetPath, item.mapping.ColumnName)
 		}
 	}
+}
+
+// generationItem 生成项
+type generationItem struct {
+	isGroup  bool          // 是否是组（非 OneToOne 类型）
+	group    MappingGroup  // 组（仅当 isGroup=true 时有效）
+	mapping  FieldMapping2 // 单个映射（仅当 isGroup=false 时有效）
+	position int           // 字段位置
+}
+
+// createSortedGenerationItems 创建按位置排序的生成项列表
+// OneToOne 类型的映射会被拆分为单独的项，以便与其他组类型交错
+func (g *Generator2) createSortedGenerationItems() []generationItem {
+	var items []generationItem
+
+	for _, group := range g.result.Groups {
+		if group.Type == OneToOne {
+			// OneToOne 类型：每个映射作为单独的项
+			for _, mapping := range group.Mappings {
+				items = append(items, generationItem{
+					isGroup:  false,
+					mapping:  mapping,
+					position: mapping.FieldPosition,
+				})
+			}
+		} else {
+			// 其他类型：整个组作为一个项
+			items = append(items, generationItem{
+				isGroup:  true,
+				group:    group,
+				position: group.FieldPosition,
+			})
+		}
+	}
+
+	// 按位置排序
+	sort.SliceStable(items, func(i, j int) bool {
+		return items[i].position < items[j].position
+	})
+
+	return items
+}
+
+// sortGroupsByPosition 按字段位置排序 groups（保留用于其他用途）
+// 对于 OneToOne 类型的组，还需要对其内部的 mappings 排序
+func (g *Generator2) sortGroupsByPosition() []MappingGroup {
+	// 复制 groups 以避免修改原始数据
+	groups := make([]MappingGroup, len(g.result.Groups))
+	copy(groups, g.result.Groups)
+
+	// 按 FieldPosition 排序 groups
+	sort.SliceStable(groups, func(i, j int) bool {
+		return groups[i].FieldPosition < groups[j].FieldPosition
+	})
+
+	// 对 OneToOne 类型的组，对其内部 mappings 也按位置排序
+	for i := range groups {
+		if groups[i].Type == OneToOne {
+			mappings := make([]FieldMapping2, len(groups[i].Mappings))
+			copy(mappings, groups[i].Mappings)
+			sort.SliceStable(mappings, func(a, b int) bool {
+				return mappings[a].FieldPosition < mappings[b].FieldPosition
+			})
+			groups[i].Mappings = mappings
+		}
+	}
+
+	return groups
 }
 
 // generateOneToOneMappings 生成一对一映射代码

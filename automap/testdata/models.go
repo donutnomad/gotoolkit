@@ -944,3 +944,62 @@ func (p *ExternalMethodPO) ToPO(entity *ExternalMethodDomain) *ExternalMethodPO 
 func (d *ExternalMethodDomain) GetItems() []string {
 	return d.Items
 }
+
+// ============================================================================
+// 测试场景21: 字段顺序测试 (Field Ordering)
+// 验证生成的 ToPatch 方法字段顺序与 PO 结构体定义顺序一致
+// ============================================================================
+
+// TokenDetail Token详情（一对多映射用）
+type TokenDetail struct {
+	TokenAddress  string
+	TokenName     string
+	TokenSymbol   string
+	TokenDecimals int
+}
+
+// FieldOrderDomain 字段顺序测试领域模型
+type FieldOrderDomain struct {
+	ID           uint64
+	Name         string
+	Token        TokenDetail // 一对多：展开为多个字段
+	Status       int
+	FailedReason string
+	CreatedAt    time.Time
+}
+
+// FieldOrderPO 字段顺序测试持久化模型
+// 注意字段顺序：ID, Name, TokenAddress, TokenName, TokenSymbol, TokenDecimals, Status, FailedReason, CreatedAt
+// ToPO 中赋值顺序可能与此不同，但生成的代码应该按此顺序
+type FieldOrderPO struct {
+	ID            uint64 `gorm:"column:id;primaryKey"`
+	Name          string `gorm:"column:name"`
+	TokenAddress  string `gorm:"column:token_address"`  // Token.TokenAddress
+	TokenName     string `gorm:"column:token_name"`     // Token.TokenName
+	TokenSymbol   string `gorm:"column:token_symbol"`   // Token.TokenSymbol
+	TokenDecimals int    `gorm:"column:token_decimals"` // Token.TokenDecimals
+	Status        int    `gorm:"column:status"`
+	FailedReason  string `gorm:"column:failed_reason"`
+	CreatedAt     int64  `gorm:"column:created_at"` // time.Time -> int64
+}
+
+// ToPO 字段顺序测试映射示例
+// 注意：这里故意按不同于 PO 结构体的顺序赋值
+// Token 字段在 Status 之后赋值，但在 PO 中 Token* 字段在 Status 之前
+// 生成的 ToPatch 代码应该按 PO 结构体顺序输出
+func (p *FieldOrderPO) ToPO(d *FieldOrderDomain) *FieldOrderPO {
+	if d == nil {
+		return nil
+	}
+	return &FieldOrderPO{
+		ID:            d.ID,
+		Name:          d.Name,
+		Status:        d.Status,       // 故意放在 Token 之前
+		FailedReason:  d.FailedReason, // 故意放在 Token 之前
+		CreatedAt:     d.CreatedAt.Unix(),
+		TokenAddress:  d.Token.TokenAddress, // Token 字段放在最后
+		TokenName:     d.Token.TokenName,
+		TokenSymbol:   d.Token.TokenSymbol,
+		TokenDecimals: d.Token.TokenDecimals,
+	}
+}

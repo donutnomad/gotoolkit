@@ -62,9 +62,10 @@ func (m *Mapper) Parse(receiverType, funcName string) (*ParseResult2, error) {
 	m.receiverType = receiverType
 	m.funcName = funcName
 	m.result = &ParseResult2{
-		FuncName:     funcName,
-		ReceiverType: receiverType,
-		TargetType:   receiverType,
+		FuncName:             funcName,
+		ReceiverType:         receiverType,
+		TargetType:           receiverType,
+		TargetFieldPositions: make(map[string]int),
 	}
 
 	// 解析文件
@@ -83,8 +84,11 @@ func (m *Mapper) Parse(receiverType, funcName string) (*ParseResult2, error) {
 	// 扁平化所有映射
 	m.flattenMappings()
 
-	// 收集目标类型的所有列名
+	// 收集目标类型的所有列名（同时填充字段位置映射）
 	m.collectTargetColumns()
+
+	// 根据字段位置设置映射的 FieldPosition
+	m.setFieldPositions()
 
 	return m.result, nil
 }
@@ -1232,6 +1236,38 @@ func (m *Mapper) flattenMappings() {
 	}
 }
 
+// setFieldPositions 根据字段位置设置映射的 FieldPosition
+func (m *Mapper) setFieldPositions() {
+	// 设置每个映射的 FieldPosition
+	for i := range m.result.Groups {
+		group := &m.result.Groups[i]
+		minPos := -1
+
+		for j := range group.Mappings {
+			mapping := &group.Mappings[j]
+			if pos, ok := m.result.TargetFieldPositions[mapping.ColumnName]; ok {
+				mapping.FieldPosition = pos
+				if minPos == -1 || pos < minPos {
+					minPos = pos
+				}
+			}
+		}
+
+		// 组的位置取其所有映射的最小位置
+		if minPos >= 0 {
+			group.FieldPosition = minPos
+		}
+	}
+
+	// 同时更新 AllMappings 中的 FieldPosition
+	for i := range m.result.AllMappings {
+		mapping := &m.result.AllMappings[i]
+		if pos, ok := m.result.TargetFieldPositions[mapping.ColumnName]; ok {
+			mapping.FieldPosition = pos
+		}
+	}
+}
+
 // DebugMode 启用调试模式
 // 可以通过设置环境变量 AUTOMAP_DEBUG=1 来启用
 var DebugMode = os.Getenv("AUTOMAP_DEBUG") == "1"
@@ -1267,12 +1303,13 @@ func (m *Mapper) collectTargetColumns() {
 		}
 	}
 
-	// 从解析结果中提取列名
-	for _, field := range structInfo.Fields {
+	// 从解析结果中提取列名，同时记录字段位置
+	for i, field := range structInfo.Fields {
 		columnName := gormparse.ExtractColumnNameWithPrefix(field.Name, field.Tag, field.EmbeddedPrefix)
 		m.result.TargetColumns = append(m.result.TargetColumns, columnName)
+		m.result.TargetFieldPositions[columnName] = i
 		if DebugMode {
-			fmt.Printf("[DEBUG] Column: %s (from field %s)\n", columnName, field.Name)
+			fmt.Printf("[DEBUG] Column: %s (from field %s, position %d)\n", columnName, field.Name, i)
 		}
 	}
 
@@ -1324,7 +1361,12 @@ func (m *Mapper) collectTargetColumnsSimple() {
 		return
 	}
 
-	m.result.TargetColumns = m.collectStructColumns(structType, "")
+	columns := m.collectStructColumns(structType, "")
+	m.result.TargetColumns = columns
+	// 同时填充位置映射
+	for i, col := range columns {
+		m.result.TargetFieldPositions[col] = i
+	}
 }
 
 // collectStructColumns 递归收集结构体的所有列名
