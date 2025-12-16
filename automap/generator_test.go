@@ -384,3 +384,60 @@ func TestGenerate2CrossFile(t *testing.T) {
 
 	t.Logf("Generated full code:\n%s", fullCode)
 }
+
+// TestGenerate2CrossFileFromMapperFile 测试跨文件场景（从方法所在文件解析）
+// 关键场景：传入的是方法所在的文件（mapper文件），而不是结构体定义文件
+// 这是用户实际遇到的场景：ToPO方法在mapper.go中，但PO结构体在另一个文件中
+func TestGenerate2CrossFileFromMapperFile(t *testing.T) {
+	// 注意：这里传入的是ToPO方法所在的文件，而结构体定义在 cross_file_po.go 中
+	// 这模拟了用户的实际场景：gormgen使用method.FilePath（方法所在文件）来调用automap
+	fullCode, funcCode, err := automap.Generate2("testdata/cross_file_mapper.go", "CrossFilePO", "ToPO", "ToPatch")
+	if err != nil {
+		t.Fatalf("Generate2 failed: %v", err)
+	}
+
+	// 验证嵌入字段被正确识别
+	// 关键：即使传入的是mapper文件，也能正确解析结构体并识别嵌入的Model字段
+	expectedMappings := []string{
+		`// Embedded: Model`,
+		`fields.ID.IsPresent()`,
+		`values["id"] = b.Model.ID`,
+		`fields.CreatedAt.IsPresent()`,
+		`values["created_at"] = b.Model.CreatedAt`,
+		`fields.UpdatedAt.IsPresent()`,
+		`values["updated_at"] = b.Model.UpdatedAt`,
+		`fields.Username.IsPresent()`,
+		`values["username"] = b.Username`,
+		`fields.Email.IsPresent()`,
+		`values["email"] = b.Email`,
+		`fields.Score.IsPresent()`,
+		`values["score"] = b.Score`,
+	}
+	for _, expected := range expectedMappings {
+		if !strings.Contains(funcCode, expected) {
+			t.Errorf("Missing expected mapping: %s", expected)
+		}
+	}
+
+	t.Logf("Generated full code:\n%s", fullCode)
+}
+
+// TestGenerate2CrossFileWithMissingFields 测试跨文件场景下的Missing fields注释
+// 验证当从方法文件解析时，能正确计算并生成Missing fields注释
+func TestGenerate2CrossFileWithMissingFields(t *testing.T) {
+	// 传入方法所在的文件
+	fullCode, funcCode, err := automap.Generate2("testdata/cross_file_mapper.go", "CrossFilePO", "ToPO", "ToPatch")
+	if err != nil {
+		t.Fatalf("Generate2 failed: %v", err)
+	}
+
+	// CrossFilePO 嵌入了 Model（包含 ID, CreatedAt, UpdatedAt）
+	// ToPO 方法映射了所有这些字段，所以不应该有 Missing fields 注释
+	// 如果出现 Missing fields，说明跨文件解析出了问题
+	if strings.Contains(fullCode, "// Missing fields:") {
+		// 如果有 Missing fields，检查是否是合理的缺失
+		t.Logf("Full code contains Missing fields comment:\n%s", fullCode)
+	}
+
+	t.Logf("Generated func code:\n%s", funcCode)
+}

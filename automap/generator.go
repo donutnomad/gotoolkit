@@ -335,7 +335,7 @@ func Generate2WithOptions(funcNameWithReceiver, genFuncName string, options ...O
 	// 获取文件路径
 	var filePath string
 	for _, opt := range options {
-		if fp := opt(nil, ""); fp != "" {
+		if fp := opt(""); fp != "" {
 			filePath = fp
 		}
 	}

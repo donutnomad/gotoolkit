@@ -153,7 +153,8 @@ func shouldExpandEmbeddedField(fieldType string) bool {
 const maxEmbeddingDepth = 10
 
 // parseEmbeddedStructWithStack 带栈的递归解析，避免循环引用
-func parseEmbeddedStructWithStack(structType string, stack map[string]bool, imports map[string]string) ([]FieldInfo, error) {
+// baseDir: 原始文件所在的目录，用于同包结构体查找
+func parseEmbeddedStructWithStack(structType string, stack map[string]bool, imports map[string]string, baseDir string) ([]FieldInfo, error) {
 	// 检查嵌套深度限制
 	if len(stack) >= maxEmbeddingDepth {
 		return nil, fmt.Errorf("嵌入字段深度超过限制 %d: %s", maxEmbeddingDepth, structType)
@@ -175,10 +176,10 @@ func parseEmbeddedStructWithStack(structType string, stack map[string]bool, impo
 	var err error
 
 	if packageName == "" {
-		// 同包内的结构体，在当前目录查找
-		files, err := findGoFiles(".")
+		// 同包内的结构体，在原始文件所在目录查找
+		files, err := findGoFiles(baseDir)
 		if err != nil {
-			return nil, fmt.Errorf("查找当前目录Go文件失败: %v", err)
+			return nil, fmt.Errorf("查找目录 %s 中的Go文件失败: %v", baseDir, err)
 		}
 
 		for _, file := range files {
@@ -189,11 +190,11 @@ func parseEmbeddedStructWithStack(structType string, stack map[string]bool, impo
 		}
 
 		if targetFile == "" {
-			return nil, fmt.Errorf("未在当前包中找到结构体 %s", structName)
+			return nil, fmt.Errorf("未在包目录 %s 中找到结构体 %s", baseDir, structName)
 		}
 	} else {
 		// 跨包结构体，需要根据import路径查找
-		targetFile, err = findStructInPackageWithImports(packageName, structName, imports)
+		targetFile, err = findStructInPackageWithImportsAndBaseDir(packageName, structName, imports, baseDir)
 		if err != nil {
 			// 明确报告找不到第三方包的错误
 			return nil, fmt.Errorf("无法解析嵌入的结构体 %s.%s: %v", packageName, structName, err)
@@ -205,7 +206,7 @@ func parseEmbeddedStructWithStack(structType string, stack map[string]bool, impo
 	}
 
 	// 递归解析该结构体
-	structInfo, err := parseStructWithStackAndImports(targetFile, structName, stack, imports)
+	structInfo, err := parseStructWithStackAndImportsAndBaseDir(targetFile, structName, stack, imports, filepath.Dir(targetFile))
 	if err != nil {
 		return nil, fmt.Errorf("解析嵌入结构体 %s 失败: %v", structType, err)
 	}
@@ -223,8 +224,13 @@ func parseEmbeddedStructWithStack(structType string, stack map[string]bool, impo
 	return fields, nil
 }
 
-// parseStructWithStackAndImports 带栈和导入信息的结构体解析
+// parseStructWithStackAndImports 带栈和导入信息的结构体解析（向后兼容）
 func parseStructWithStackAndImports(filename, structName string, stack map[string]bool, imports map[string]string) (*StructInfo, error) {
+	return parseStructWithStackAndImportsAndBaseDir(filename, structName, stack, imports, filepath.Dir(filename))
+}
+
+// parseStructWithStackAndImportsAndBaseDir 带栈、导入信息和基础目录的结构体解析
+func parseStructWithStackAndImportsAndBaseDir(filename, structName string, stack map[string]bool, imports map[string]string, baseDir string) (*StructInfo, error) {
 	fset := token.NewFileSet()
 	node, err := parser.ParseFile(fset, filename, nil, parser.ParseComments)
 	if err != nil {
@@ -266,8 +272,8 @@ func parseStructWithStackAndImports(filename, structName string, stack map[strin
 		return nil, fmt.Errorf("未找到结构体 %s", structName)
 	}
 
-	// 解析字段（传入栈信息和导入信息）
-	fields, err := parseStructFieldsWithStackAndImports(targetStruct.Fields.List, stack, imports)
+	// 解析字段（传入栈信息、导入信息和基础目录）
+	fields, err := parseStructFieldsWithStackAndImportsAndBaseDir(targetStruct.Fields.List, stack, imports, baseDir)
 	if err != nil {
 		return nil, err
 	}
@@ -293,8 +299,14 @@ func parseStructWithStack(filename, structName string, stack map[string]bool) (*
 	return parseStructWithStackAndImports(filename, structName, stack, imports)
 }
 
-// parseStructFieldsWithStackAndImports 带栈和导入信息的字段解析
+// parseStructFieldsWithStackAndImports 带栈和导入信息的字段解析（向后兼容）
 func parseStructFieldsWithStackAndImports(fieldList []*ast.Field, stack map[string]bool, imports map[string]string) ([]FieldInfo, error) {
+	// 使用当前工作目录作为默认 baseDir（向后兼容）
+	return parseStructFieldsWithStackAndImportsAndBaseDir(fieldList, stack, imports, ".")
+}
+
+// parseStructFieldsWithStackAndImportsAndBaseDir 带栈、导入信息和基础目录的字段解析
+func parseStructFieldsWithStackAndImportsAndBaseDir(fieldList []*ast.Field, stack map[string]bool, imports map[string]string, baseDir string) ([]FieldInfo, error) {
 	var fields []FieldInfo
 
 	for _, field := range fieldList {
@@ -310,7 +322,7 @@ func parseStructFieldsWithStackAndImports(fieldList []*ast.Field, stack map[stri
 			// 匿名字段 (嵌入字段)
 			if shouldExpandEmbeddedField(fieldType) {
 				// 需要扩展的嵌入字段，尝试递归解析
-				embeddedFields, err := parseEmbeddedStructWithStack(fieldType, stack, imports)
+				embeddedFields, err := parseEmbeddedStructWithStack(fieldType, stack, imports, baseDir)
 				if err != nil {
 					return nil, err // 传递错误给上层
 				}
@@ -330,7 +342,7 @@ func parseStructFieldsWithStackAndImports(fieldList []*ast.Field, stack map[stri
 				isEmbedded, embeddedPrefix := parseGormEmbeddedTag(fieldTag)
 				if isEmbedded && shouldExpandEmbeddedField(fieldType) {
 					// 需要展开的 embedded 字段，递归解析
-					embeddedFields, err := parseEmbeddedStructWithStack(fieldType, stack, imports)
+					embeddedFields, err := parseEmbeddedStructWithStack(fieldType, stack, imports, baseDir)
 					if err != nil {
 						return nil, err
 					}
@@ -392,16 +404,21 @@ func parseTypePackageAndName(typeName string) (packageName, structName string) {
 	return parts[0], parts[1]
 }
 
-// findStructInPackageWithImports 在指定包中查找结构体定义，使用导入信息
+// findStructInPackageWithImports 在指定包中查找结构体定义，使用导入信息（向后兼容）
 func findStructInPackageWithImports(packageName, structName string, imports map[string]string) (string, error) {
+	return findStructInPackageWithImportsAndBaseDir(packageName, structName, imports, ".")
+}
+
+// findStructInPackageWithImportsAndBaseDir 在指定包中查找结构体定义，使用导入信息和基础目录
+func findStructInPackageWithImportsAndBaseDir(packageName, structName string, imports map[string]string, baseDir string) (string, error) {
 	// 从imports中获取完整的导入路径
 	fullImportPath, exists := imports[packageName]
 	if !exists {
 		return "", fmt.Errorf("未找到包 %s 的导入信息", packageName)
 	}
 
-	// 首先尝试从当前项目的根目录开始查找
-	projectRoot, err := findProjectRoot()
+	// 从基础目录开始查找项目根目录
+	projectRoot, err := findProjectRootFromDir(baseDir)
 	if err != nil {
 		return "", err
 	}
@@ -593,14 +610,23 @@ func getModuleName(projectRoot string) (string, error) {
 	return "", fmt.Errorf("未在 go.mod 中找到模块名称")
 }
 
-// findProjectRoot 查找项目根目录（包含go.mod的目录）
+// findProjectRoot 查找项目根目录（包含go.mod的目录）- 向后兼容
 func findProjectRoot() (string, error) {
 	currentDir, err := os.Getwd()
 	if err != nil {
 		return "", err
 	}
+	return findProjectRootFromDir(currentDir)
+}
 
-	dir := currentDir
+// findProjectRootFromDir 从指定目录开始查找项目根目录（包含go.mod的目录）
+func findProjectRootFromDir(startDir string) (string, error) {
+	// 获取绝对路径
+	dir, err := filepath.Abs(startDir)
+	if err != nil {
+		return "", err
+	}
+
 	for {
 		goModPath := filepath.Join(dir, "go.mod")
 		if _, err := os.Stat(goModPath); err == nil {
@@ -615,7 +641,7 @@ func findProjectRoot() (string, error) {
 		dir = parent
 	}
 
-	return "", fmt.Errorf("未找到项目根目录（go.mod文件）")
+	return "", fmt.Errorf("未找到项目根目录（go.mod文件）从 %s 开始", startDir)
 }
 
 // findPackagePath 根据包名查找包路径

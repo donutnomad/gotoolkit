@@ -1073,21 +1073,84 @@ func (m *Mapper) flattenMappings() {
 	}
 }
 
+// DebugMode 启用调试模式
+// 可以通过设置环境变量 AUTOMAP_DEBUG=1 来启用
+var DebugMode = os.Getenv("AUTOMAP_DEBUG") == "1"
+
 // collectTargetColumns 收集目标类型（PO）的所有数据库列名
 func (m *Mapper) collectTargetColumns() {
 	// 使用 structparse 解析目标类型，它能正确处理外部包的嵌入类型
+	// 首先尝试在当前文件中查找
 	structInfo, err := structparse.ParseStruct(m.filePath, m.receiverType)
 	if err != nil {
-		// 解析失败时回退到简单方式
-		m.collectTargetColumnsSimple()
-		return
+		if DebugMode {
+			fmt.Printf("[DEBUG] structparse.ParseStruct failed for %s in %s: %v\n", m.receiverType, m.filePath, err)
+			fmt.Println("[DEBUG] Trying to find struct in same directory...")
+		}
+		// 在同目录下的其他文件中查找
+		structInfo, err = m.findStructInSameDirectory()
+		if err != nil {
+			if DebugMode {
+				fmt.Printf("[DEBUG] Failed to find struct %s in same directory: %v\n", m.receiverType, err)
+				fmt.Println("[DEBUG] Falling back to collectTargetColumnsSimple")
+			}
+			// 解析失败时回退到简单方式
+			m.collectTargetColumnsSimple()
+			return
+		}
+	}
+
+	if DebugMode {
+		fmt.Printf("[DEBUG] structparse.ParseStruct succeeded for %s, found %d fields:\n", m.receiverType, len(structInfo.Fields))
+		for i, field := range structInfo.Fields {
+			fmt.Printf("[DEBUG]   %d. Name=%s, Type=%s, Tag=%s, SourceType=%s, EmbeddedPrefix=%s\n",
+				i+1, field.Name, field.Type, field.Tag, field.SourceType, field.EmbeddedPrefix)
+		}
 	}
 
 	// 从解析结果中提取列名
 	for _, field := range structInfo.Fields {
 		columnName := gormparse.ExtractColumnNameWithPrefix(field.Name, field.Tag, field.EmbeddedPrefix)
 		m.result.TargetColumns = append(m.result.TargetColumns, columnName)
+		if DebugMode {
+			fmt.Printf("[DEBUG] Column: %s (from field %s)\n", columnName, field.Name)
+		}
 	}
+
+	if DebugMode {
+		fmt.Printf("[DEBUG] Total target columns: %d\n", len(m.result.TargetColumns))
+	}
+}
+
+// findStructInSameDirectory 在同目录下的其他Go文件中查找结构体
+func (m *Mapper) findStructInSameDirectory() (*structparse.StructInfo, error) {
+	dir := filepath.Dir(m.filePath)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, fmt.Errorf("读取目录失败: %w", err)
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") {
+			continue
+		}
+
+		filePath := filepath.Join(dir, entry.Name())
+		// 跳过当前文件，因为已经尝试过了
+		if filePath == m.filePath {
+			continue
+		}
+
+		structInfo, err := structparse.ParseStruct(filePath, m.receiverType)
+		if err == nil {
+			if DebugMode {
+				fmt.Printf("[DEBUG] Found struct %s in file: %s\n", m.receiverType, filePath)
+			}
+			return structInfo, nil
+		}
+	}
+
+	return nil, fmt.Errorf("在目录 %s 中未找到结构体 %s", dir, m.receiverType)
 }
 
 // collectTargetColumnsSimple 简单方式收集列名（仅处理当前文件中的类型）
