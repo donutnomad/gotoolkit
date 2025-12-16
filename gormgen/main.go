@@ -152,8 +152,12 @@ func main() {
 				}
 				mapperMethod = append(mapperMethod, [2]string{fmt.Sprintf("%s.%s", trimPtr(method.ReceiverType), method.Name), method.FilePath})
 			} else {
-				// 有指定mapper，遍历所有mapper配置
+				// 有指定mapper，只查找当前structName对应的mapper
 				for _, f := range mapFuncs {
+					// 检查是否是当前结构体的mapper
+					if f.StructName != structName {
+						continue
+					}
 					// 首先在当前结构体的方法中查找
 					method, ok := lo.Find(si.Methods, func(item gormparse.MethodInfo) bool {
 						return item.Name == f.FunctionName && trimPtr(item.ReceiverType) == f.StructName
@@ -162,12 +166,10 @@ func main() {
 						// 如果在当前结构体中找不到，在同目录下的其他文件中查找
 						method, ok = findMethodInDirectory(filepath.Dir(targetFile), f.StructName, f.FunctionName)
 						if !ok {
-							// 没找到就跳过，可能是给其他struct的mapper
 							continue
 						}
 					}
 					mapperMethod = append(mapperMethod, [2]string{fmt.Sprintf("%s.%s", trimPtr(method.ReceiverType), method.Name), method.FilePath})
-					// 找到一个就够了，跳出循环
 					break
 				}
 			}
