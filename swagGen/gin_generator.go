@@ -446,20 +446,19 @@ func (g *GinGenerator) generateHeaderParamBinding(param Parameter) string {
 func (g *GinGenerator) generateMethodCall(method SwaggerMethod) string {
 	var args []string
 
-	// 添加 context 参数（如果方法需要）
-	needsContext := g.methodNeedsContext(method)
-	if needsContext {
-		args = append(args, "ctx")
-	}
-
 	// 按照接口定义的顺序添加参数
 	for _, param := range method.Parameters {
-		// 跳过 gin.Context 和 context.Context 参数
-		if param.Type.FullName == GinContextType ||
-			param.Type.TypeName == "Context" ||
-			strings.Contains(param.Type.FullName, "context.Context") {
+		// 如果是标准库的 context.Context 类型
+		if strings.Contains(param.Type.FullName, "context.Context") {
+			args = append(args, "ctx.Request.Context()")
 			continue
 		}
+		// 如果是 gin.Context 类型
+		if param.Type.FullName == GinContextType || param.Type.TypeName == "Context" {
+			args = append(args, "ctx")
+			continue
+		}
+		// 其他参数
 		args = append(args, param.Name)
 	}
 
