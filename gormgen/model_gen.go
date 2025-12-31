@@ -278,8 +278,23 @@ func generateFullPatchMethod(model *gormparse.GormModelInfo) string {
 		}
 
 		// 生成赋值语句
-		builder.WriteString(fmt.Sprintf("\tvalues[\"%s\"] = %s.%s\n",
-			field.ColumnName, receiverVar, field.Name))
+		// 如果字段是嵌入字段，需要通过嵌入字段名访问
+		var fieldAccess string
+		if field.IsEmbedded && field.SourceType != "" {
+			// 从 SourceType 提取字段名（去除包名前缀）
+			// 例如：orm.Model -> Model, caip10.AccountIDColumnsCompact -> AccountIDColumnsCompact
+			fieldName := field.SourceType
+			if idx := strings.LastIndex(fieldName, "."); idx >= 0 {
+				fieldName = fieldName[idx+1:]
+			}
+			// 嵌入字段：receiverVar.FieldName.SubFieldName
+			fieldAccess = fmt.Sprintf("%s.%s.%s", receiverVar, fieldName, field.Name)
+		} else {
+			// 普通字段：receiverVar.FieldName
+			fieldAccess = fmt.Sprintf("%s.%s", receiverVar, field.Name)
+		}
+
+		builder.WriteString(fmt.Sprintf("\tvalues[\"%s\"] = %s\n", field.ColumnName, fieldAccess))
 	}
 
 	// 返回values

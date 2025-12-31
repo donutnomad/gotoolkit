@@ -102,9 +102,10 @@ func ParseGormModel(structInfo *StructInfo) *GormModelInfo {
 		gormField := GormFieldInfo{
 			Name:           field.Name,
 			Type:           field.Type,
-			SourceType:     field.SourceType,     // 复制来源信息
-			Tag:            field.Tag,            // 保存标签信息
-			EmbeddedPrefix: field.EmbeddedPrefix, // 复制 embeddedPrefix
+			SourceType:     field.SourceType,       // 复制来源信息
+			IsEmbedded:     field.SourceType != "", // 如果 SourceType 不为空，说明是嵌入字段
+			Tag:            field.Tag,              // 保存标签信息
+			EmbeddedPrefix: field.EmbeddedPrefix,   // 复制 embeddedPrefix
 		}
 
 		// 解析列名（使用 embeddedPrefix）

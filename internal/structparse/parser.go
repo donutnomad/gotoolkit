@@ -211,15 +211,9 @@ func parseEmbeddedStructWithStack(structType string, stack map[string]bool, impo
 		return nil, fmt.Errorf("解析嵌入结构体 %s 失败: %v", structType, err)
 	}
 
-	// 为从嵌入结构体来的字段标记来源
+	// 复制字段（不在这里设置 SourceType，由调用方设置）
 	fields := make([]FieldInfo, len(structInfo.Fields))
-	for i, field := range structInfo.Fields {
-		fields[i] = field
-		// 如果字段已经有来源标记，保持原来的来源；否则标记为当前嵌入类型
-		if field.SourceType == "" {
-			fields[i].SourceType = structType
-		}
-	}
+	copy(fields, structInfo.Fields)
 
 	return fields, nil
 }
@@ -326,6 +320,12 @@ func parseStructFieldsWithStackAndImportsAndBaseDir(fieldList []*ast.Field, stac
 				if err != nil {
 					return nil, err // 传递错误给上层
 				}
+				// 为匿名嵌入字段设置 SourceType 为类型名
+				for i := range embeddedFields {
+					if embeddedFields[i].SourceType == "" {
+						embeddedFields[i].SourceType = fieldType
+					}
+				}
 				fields = append(fields, embeddedFields...)
 			} else {
 				// 不需要扩展的嵌入字段，保持原样
@@ -346,7 +346,7 @@ func parseStructFieldsWithStackAndImportsAndBaseDir(fieldList []*ast.Field, stac
 					if err != nil {
 						return nil, err
 					}
-					// 为展开的字段添加 embeddedPrefix
+					// 为展开的字段添加 embeddedPrefix 和 SourceType
 					for i := range embeddedFields {
 						if embeddedPrefix != "" {
 							// 累加 prefix（支持多层嵌套）
@@ -355,6 +355,10 @@ func parseStructFieldsWithStackAndImportsAndBaseDir(fieldList []*ast.Field, stac
 							} else {
 								embeddedFields[i].EmbeddedPrefix = embeddedPrefix
 							}
+						}
+						// 设置字段来源为嵌入字段的字段名（而不是类型名）
+						if embeddedFields[i].SourceType == "" {
+							embeddedFields[i].SourceType = name.Name
 						}
 					}
 					fields = append(fields, embeddedFields...)
